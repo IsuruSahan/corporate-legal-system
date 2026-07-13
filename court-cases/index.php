@@ -83,86 +83,8 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
                 <th style="text-align: center;">ATTACHMENT</th>
             </tr>
         </thead>
-        <tbody>
-            <?php if (count($records) > 0): ?>
-                <?php foreach ($records as $r): ?>
-                    <tr id="case-row-<?php echo $r['id']; ?>" onclick="openDetailDrawer(<?php echo $r['id']; ?>)" style="cursor: pointer;">
-                        <td>
-                            <div class="primary-line" style="font-weight: 700; color: var(--text-dark); font-size: 14px;">
-                                <?php echo htmlspecialchars($r['case_parties']); ?>
-                            </div>
-                            <div style="font-size: 12px; color: var(--text-light); font-weight: 500; margin-top: 2px;">
-                                <strong style="color: #475569;"><?php echo htmlspecialchars($r['company_name']); ?></strong> 
-                                <span style="margin: 0 4px; color: #cbd5e1;">|</span> <?php echo htmlspecialchars(substr($r['case_description'], 0, 75)) . (strlen($r['case_description']) > 75 ? '...' : ''); ?>
-                            </div>
-                        </td>
-                        <td>
-                            <span class="court-cell-text" style="font-size: 13px; font-weight: 600; color: var(--text-muted);">
-                                <?php echo htmlspecialchars($r['room_name']); ?>
-                            </span>
-                        </td>
-                        <td>
-                            <div class="officer-cell-text" style="font-size: 13px; font-weight: 700; color: var(--text-dark);"><?php echo htmlspecialchars($r['officer_name']); ?></div>
-                            <div style="font-size: 11px; color: var(--text-light); font-weight: 500; margin-top: 1px;">Attn: <?php echo htmlspecialchars($r['instructing_attorney']); ?></div>
-                        </td>
-                        <td>
-                            <span style="font-family: monospace; font-size: 12px; font-weight: 700; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; color: #1e293b;">
-                                <?php echo htmlspecialchars($r['case_number']); ?>
-                            </span>
-                        </td>
-                        <td>
-                            <div style="font-size: 13px; font-weight: 700; color: #0f172a;">
-                                <?php echo !empty($r['next_hearing_date']) ? date('M d, Y', strtotime($r['next_hearing_date'])) : 'Not Scheduled'; ?>
-                            </div>
-                            <?php if(!empty($r['next_step_description'])): ?>
-                                <div style="font-size: 11px; color: var(--text-light); font-weight: 500; margin-top: 1px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                    Next Action: <?php echo htmlspecialchars($r['next_step_description']); ?>
-                                </div>
-                            <?php endif; ?>
-                        </td>
-<td>
-    <?php 
-    // Capture the record column directly from the row array iterator context
-    $st = !empty($r['case_status']) ? $r['case_status'] : 'Filing Stage';
-    
-    $badge = 'progress';
-    if ($st === 'Settled') $badge = 'linked';
-    if ($st === 'Filing Stage') $badge = 'pending';
-    if ($st === 'Appealed') $badge = 'error';
-    if ($st === 'In Progress') $badge = 'progress';
-    ?>
-    <span class="status-badge <?php echo $badge; ?>" style="font-weight: 700;">
-        <?php echo htmlspecialchars($st); ?>
-    </span>
-</td>
-<td style="text-align: center;">
-    <?php 
-    $files = json_decode($r['file_attachment_path'] ?? '[]', true); 
-    if (!empty($files) && is_array($files)): 
-        foreach ($files as $path): 
-            $cleanPath = ltrim($path, '/');
-            $fullPath = '../' . $cleanPath; 
-    ?>
-        <a href="<?php echo htmlspecialchars($fullPath); ?>" 
-           target="_blank" 
-           class="file-link-trigger active" 
-           style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">
-           📁
-        </a>
-    <?php endforeach; 
-    else: ?>
-        <span class="file-link-trigger none" style="color: #ccc; font-style: italic;">None</span>
-    <?php endif; ?>
-</td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr class="no-records-row">
-                    <td colspan="7" style="text-align: center; padding: 80px; color: var(--text-light);">
-                        No structural corporate litigation case history records found matching criteria bounds.
-                    </td>
-                </tr>
-            <?php endif; ?>
+        <tbody id="data-body-court-cases">
+
         </tbody>
     </table>
 </div>
@@ -531,6 +453,14 @@ function removeFile(id, index, module) { // Ensure 'module' is passed here
         }
     });
 }
+
+    // 1. Initialize pagination controls
+    initPagination('court_cases', 'data-body-court-cases');
+
+    // 2. Load the first page immediately on document ready
+    document.addEventListener("DOMContentLoaded", function() {
+        paginate('court_cases', 'data-body-court-cases', 1); 
+    });
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

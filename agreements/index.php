@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 
+
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -62,48 +63,8 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
                 <th>FILE</th>
             </tr>
         </thead>
-        <tbody>
-            <?php if (count($records) > 0): ?>
-                <?php foreach ($records as $row): ?>
-                    <tr id="agreement-row-<?php echo $row['id']; ?>">
-                        <td class="title-meta-cell" style="cursor: pointer;" onclick="openDetailDrawer(<?php echo $row['id']; ?>)">
-                            <div class="primary-line" style="color: var(--primary-brand); font-weight: 700; text-decoration: underline;"><?php echo htmlspecialchars($row['title']); ?></div>
-                            <div class="secondary-sub"><?php echo htmlspecialchars($row['company_name']); ?> <span>| Party B: <?php echo htmlspecialchars($row['party_b']); ?></span></div>
-                        </td>
-                        <td><span class="text-data-regular"><?php echo htmlspecialchars($row['category_name']); ?></span></td>
-                        <td><span class="text-data-regular"><?php echo htmlspecialchars($row['officer_name']); ?></span></td>
-                        <td><span class="text-data-bold"><?php echo htmlspecialchars($row['cabinet_location']); ?></span></td>
-                        <td><span class="text-data-regular"><?php echo date('M d, Y', strtotime($row['expiry_date'])); ?></span></td>
-                        <td><span class="status-badge <?php echo strtolower($row['initial_status']); ?>"><?php echo htmlspecialchars($row['initial_status']); ?></span></td>
-<td>
-    <?php 
-    $files = json_decode($row['file_attachment_path'], true); 
-    
-    if (!empty($files) && is_array($files)): 
-        foreach ($files as $path): 
-            // Sanitize and construct the path
-            $cleanPath = ltrim($path, '/');
-            $fullPath = '../' . $cleanPath; 
-    ?>
-        <a href="<?php echo htmlspecialchars($fullPath); ?>" 
-           target="_blank" 
-           class="file-link-trigger active" 
-           style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">
-           📁
-        </a>
-    <?php endforeach; 
-    else: ?>
-        <span class="file-link-trigger none" style="color: #ccc; font-style: italic;">
-            None
-        </span>
-    <?php endif; ?>
-</td>
+        <tbody id="data-body-agreements">
 
-</tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr><td colspan="7" style="text-align: center; padding: 100px; color: var(--text-light);">No records found.</td></tr>
-            <?php endif; ?>
         </tbody>
     </table>
 </div>
@@ -392,6 +353,14 @@ function removeFile(id, index) {
         }
     });
 }
+
+    // 1. Initialize pagination controls
+    initPagination('agreements', 'data-body-agreements');
+
+    // 2. Load the first page immediately on document ready
+    document.addEventListener("DOMContentLoaded", function() {
+        paginate('agreements', 'data-body-agreements', 1); 
+    });
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

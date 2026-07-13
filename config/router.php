@@ -492,5 +492,38 @@ case 'remove_court_file':
     default:
         echo json_encode(['success' => false, 'message' => 'Unknown core application execution transaction path routing.']);
         break;
+
+case 'fetch_paginated_data':
+    $table = $_POST['table'] ?? '';
+    $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
+    $limit = 6; // Keep your limit
+    $offset = ($page - 1) * $limit;
+
+    if ($table === 'court_cases') {
+        $query = "SELECT cc.*, gc.company_name, cr.room_name, u.full_name AS officer_name 
+                  FROM court_cases cc
+                  LEFT JOIN group_companies gc ON cc.group_company_id = gc.id
+                  LEFT JOIN court_rooms cr ON cc.court_id = cr.id
+                  LEFT JOIN users u ON cc.assigned_officer_id = u.id
+                  ORDER BY cc.id DESC LIMIT ? OFFSET ?";
+    } 
+    elseif ($table === 'agreements') {
+        $query = "SELECT a.*, gc.company_name, ac.category_name, u.full_name AS officer_name, cb.cabinet_location 
+                  FROM agreements a
+                  LEFT JOIN group_companies gc ON a.group_company_id = gc.id
+                  LEFT JOIN agreement_categories ac ON a.category_id = ac.id
+                  LEFT JOIN users u ON a.assigned_officer_id = u.id
+                  LEFT JOIN archive_cabinets cb ON a.cabinet_id = cb.id
+                  ORDER BY a.id DESC LIMIT ? OFFSET ?";
+    } 
+    else {
+        // Fallback for tables without specific joins
+        $query = "SELECT * FROM {$table} ORDER BY id DESC LIMIT ? OFFSET ?";
+    }
+    
+    $stmt = $pdo->prepare($query);
+    $stmt->execute([$limit, $offset]);
+    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+    break;
 }
 ?>

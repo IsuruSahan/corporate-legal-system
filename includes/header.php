@@ -6,6 +6,8 @@
     <title><?php echo isset($page_title) ? $page_title . " | BenLegal" : "BenLegal Engine"; ?></title>
     <!-- Hardcode absolute root routing path for assets to completely bypass dynamic string bugs -->
     <link rel="stylesheet" href="/corporate-legal-system/assets/css/style.css">
+    <!-- Use a leading slash to ensure it always references /corporate-legal-system/ from the root -->
+<script src="/corporate-legal-system/assets/js/pagination.js"></script>
 </head>
 <body>
 <div class="app-container">

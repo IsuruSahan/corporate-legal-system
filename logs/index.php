@@ -30,52 +30,20 @@ $logs = $pdo->query("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500")->fetc
                 <th>MUTATION TRACE SUMMARY</th>
             </tr>
         </thead>
-        <tbody>
-            <?php if (count($logs) > 0): ?>
-                <?php foreach ($logs as $log): ?>
-                    <tr>
-                        <td>
-                            <span class="text-data-regular" style="font-family: monospace; font-size: 12px; font-weight: 600; color: var(--text-dark);">
-                                <?php echo date('Y-m-d H:i:s', strtotime($log['timestamp'])); ?>
-                            </span>
-                        </td>
-                        <td>
-                            <div class="primary-line" style="font-size: 13px; font-weight: 600;"><?php echo htmlspecialchars($log['user_name']); ?></div>
-                            <div style="font-size: 11px; color: var(--text-light); font-weight: 500; margin-top: 1px;">Role: <?php echo htmlspecialchars($log['user_role']); ?></div>
-                        </td>
-                        <td>
-                            <?php 
-                            $badge = 'pending';
-                            if($log['action_type'] === 'INSERT') $badge = 'linked';
-                            if($log['action_type'] === 'UPDATE') $badge = 'progress';
-                            if($log['action_type'] === 'DELETE') $badge = 'error';
-                            ?>
-                            <span class="status-badge <?php echo $badge; ?>" style="display: block; text-align: center; font-size: 10px; padding: 2px 0;">
-                                <?php echo $log['action_type']; ?>
-                            </span>
-                        </td>
-                        <td>
-                            <span class="text-data-bold" style="font-size: 12px; color: var(--primary-brand);">
-                                📁 <?php echo htmlspecialchars($log['module_target']); ?>
-                            </span>
-                        </td>
-                        <td>
-                            <div style="font-size: 13px; font-weight: 500; color: var(--text-muted); line-height: 1.4;">
-                                <?php echo htmlspecialchars($log['meta_description']); ?>
-                                <span style="font-size: 11px; color: var(--text-light); font-family: monospace; margin-left: 6px;">(Ref ID: #<?php echo $log['record_id']; ?>)</span>
-                            </div>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="5" style="text-align: center; padding: 100px; color: var(--text-light);">
-                        No ledger mutations recorded yet inside the tracking subsystem registry.
-                    </td>
-                </tr>
-            <?php endif; ?>
+        <tbody id="data-body">
+<!-- JavaScript will fill it on load -->
         </tbody>
     </table>
 </div>
+
+<script>
+    // 1. Initialize pagination controls
+    initPagination('audit_logs', 'data-body');
+
+    // 2. Load the first page immediately on document ready
+    document.addEventListener("DOMContentLoaded", function() {
+        paginate('audit_logs', 'data-body', 1); 
+    });
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
