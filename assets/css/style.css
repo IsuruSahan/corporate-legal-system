@@ -740,3 +740,45 @@ body {
     border-color: #E2E8F0 !important;
     cursor: not-allowed;
 }
+
+.file-link-trigger.none {
+    color: #ccc;
+    font-style: italic;
+    cursor: default;
+}
+.file-link-trigger.active:hover {
+    text-decoration: underline !important;
+    font-weight: bold;
+}
+/* Consistent list container */
+.attached-files-list {
+    margin-bottom: 15px;
+    background: #f8f9fa;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+}
+
+/* Row styling for each file entry */
+.file-row-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background: white;
+    border: 1px solid var(--border-color);
+    margin-bottom: 5px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* Compact dropzone styling */
+.file-dropzone-compact {
+    padding: 12px;
+    border: 2px dashed var(--border-color);
+    border-radius: 6px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--primary-brand);
+    font-weight: 600;
+}

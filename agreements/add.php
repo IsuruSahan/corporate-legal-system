@@ -134,19 +134,19 @@ $cabinets = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locatio
             <h2>Attachments</h2>
             <p class="form-sub-header-desc">Upload scanned master agreements, annexures, or supporting legal materials.</p>
             
-            <div class="file-dropzone-area" id="dropzone" onclick="document.getElementById('fileInput').click()">
-                <h3>Drag and drop agreement files here</h3>
-                <p>Supports scanned PDF, DOCX up to 25MB</p>
-                <div class="browse-trigger-text">or Browse Files...</div>
-                <input type="file" name="agreement_file" id="fileInput" style="display: none;" accept=".pdf,.docx">
-            </div>
+<div class="file-dropzone-area" id="dropzone" onclick="document.getElementById('fileInput').click()">
+    <h3>Drag and drop agreement files here</h3>
+    <p>Supports scanned PDF, DOCX up to 25MB</p>
+    <div class="browse-trigger-text">or Browse Files...</div>
+    <input type="file" name="agreement_files[]" id="fileInput" style="display: none;" accept=".pdf,.docx" multiple>
+</div>
 
-            <div class="queued-registry-section">
-                <div class="field-label-text">Queued Attachments</div>
-                <div id="fileQueueContainer" style="margin-top: 8px; font-size: 13px; color: var(--text-muted); font-weight: 500;">
-                    No files attached yet.
-                </div>
-            </div>
+<div class="queued-registry-section">
+    <div class="field-label-text">Queued Attachments</div>
+    <div id="fileQueueContainer" style="margin-top: 8px; font-size: 13px; color: var(--text-muted); font-weight: 500;">
+        No files attached yet.
+    </div>
+</div>
         </div>
     </div>
 </form>
@@ -163,8 +163,25 @@ const fileInput = document.getElementById('fileInput');
 const queueContainer = document.getElementById('fileQueueContainer');
 
 fileInput.addEventListener('change', function() {
-    if (this.files.length) {
-        queueContainer.innerHTML = `<div class="queued-file-row"><span class="queued-file-name">📄 ${this.files[0].name}</span><span class="queued-file-size">${(this.files[0].size / (1024 * 1024)).toFixed(2)} MB</span></div>`;
+    queueContainer.innerHTML = ''; // Clear existing queue
+
+    if (this.files.length > 0) {
+        // Create a list to display all selected files
+        let html = '<ul style="list-style: none; padding: 0;">';
+        
+        Array.from(this.files).forEach((file, index) => {
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            html += `
+                <li class="queued-file-row" style="margin-bottom: 5px;">
+                    📄 <strong>${file.name}</strong> 
+                    <span style="color: #666;">(${sizeMB} MB)</span>
+                </li>`;
+        });
+        
+        html += '</ul>';
+        queueContainer.innerHTML = html;
+    } else {
+        queueContainer.innerHTML = 'No files attached yet.';
     }
 });
 

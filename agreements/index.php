@@ -75,8 +75,31 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
                         <td><span class="text-data-bold"><?php echo htmlspecialchars($row['cabinet_location']); ?></span></td>
                         <td><span class="text-data-regular"><?php echo date('M d, Y', strtotime($row['expiry_date'])); ?></span></td>
                         <td><span class="status-badge <?php echo strtolower($row['initial_status']); ?>"><?php echo htmlspecialchars($row['initial_status']); ?></span></td>
-                        <td><span class="file-link-trigger none">📁 None</span></td>
-                    </tr>
+<td>
+    <?php 
+    $files = json_decode($row['file_attachment_path'], true); 
+    
+    if (!empty($files) && is_array($files)): 
+        foreach ($files as $path): 
+            // Sanitize and construct the path
+            $cleanPath = ltrim($path, '/');
+            $fullPath = '../' . $cleanPath; 
+    ?>
+        <a href="<?php echo htmlspecialchars($fullPath); ?>" 
+           target="_blank" 
+           class="file-link-trigger active" 
+           style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">
+           📁
+        </a>
+    <?php endforeach; 
+    else: ?>
+        <span class="file-link-trigger none" style="color: #ccc; font-style: italic;">
+            None
+        </span>
+    <?php endif; ?>
+</td>
+
+</tr>
                 <?php endforeach; ?>
             <?php else: ?>
                 <tr><td colspan="7" style="text-align: center; padding: 100px; color: var(--text-light);">No records found.</td></tr>
@@ -92,7 +115,7 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
             <span onclick="closeDetailDrawer()" style="cursor: pointer; font-weight: bold; color: var(--text-light); font-size: 18px;">✕</span>
         </div>
 
-        <form id="drawerForm" class="view-mode" novalidate>
+        <form id="drawerForm" enctype="multipart/form-data">
             <input type="hidden" name="action" value="update_agreement">
             <input type="hidden" name="id" id="edit_id">
 
@@ -178,6 +201,20 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
                     <textarea name="internal_comments" id="edit_comments" class="form-field-textarea tall-box" maxlength="500" readonly></textarea>
                 </div>
             </div>
+<div class="form-group-row">
+    <label class="field-label-text">Current Attachments</label>
+    <div id="drawerFilesContainer" class="mb-3">
+        </div>
+    
+    <div id="addFilesContainer" style="display:none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+        <label class="field-label-text">Add More Files</label>
+        <div class="file-dropzone-compact" onclick="document.getElementById('editFileInput').click()" 
+             style="padding: 12px; border: 2px dashed var(--border-color); border-radius: 6px; text-align: center; cursor: pointer; color: var(--primary-brand);">
+             <span class="browse-trigger-text">Browse & Upload PDF/DOCX</span>
+        </div>
+        <input type="file" name="agreement_files[]" id="editFileInput" multiple class="form-field-input" accept=".pdf,.docx" style="display:none;">
+    </div>
+</div>
 
             <div style="display: flex; justify-content: space-between; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-color);">
                 <div>
@@ -210,6 +247,7 @@ function openDetailDrawer(id) {
     .then(res => {
         if(res.success) {
             const d = res.data;
+            // Populate standard metadata
             document.getElementById('edit_id').value = d.id;
             document.getElementById('edit_title').value = d.title;
             document.getElementById('edit_company').value = d.group_company_id;
@@ -225,6 +263,33 @@ function openDetailDrawer(id) {
             document.getElementById('edit_status').value = d.initial_status;
             document.getElementById('edit_comments').value = d.internal_comments;
 
+            // --- FILE ATTACHMENT HANDLING ---
+            const fileContainer = document.getElementById('drawerFilesContainer');
+            fileContainer.innerHTML = ''; // Clear previous files
+            
+            try {
+                // Parse JSON array of paths from database
+                const files = JSON.parse(d.file_attachment_path || '[]');
+                
+                if (files.length > 0) {
+                    files.forEach((path, index) => {
+                        const fileName = path.split('/').pop();
+                        fileContainer.innerHTML += `
+                            <div class="d-flex align-items-center justify-content-between mb-2 p-2 border rounded">
+                                <a href="..${path}" target="_blank" class="text-decoration-none">
+                                    📄 ${fileName}
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        onclick="removeFile(${d.id}, ${index})">×</button>
+                            </div>`;
+                    });
+                } else {
+                    fileContainer.innerHTML = '<p class="text-muted small">No attachments found.</p>';
+                }
+            } catch (e) {
+                console.error("Error parsing file paths:", e);
+            }
+
             // Enforce default View Mode bounds upon initialization
             disableEditMode();
             document.getElementById('drawerOverlay').classList.add('active');
@@ -233,16 +298,20 @@ function openDetailDrawer(id) {
 }
 
 function enableEditMode() {
-    const form = document.getElementById('drawerForm');
-    form.classList.remove('view-mode');
+    // 1. Remove readonly/disabled from all inputs
+    document.getElementById('drawerForm').classList.remove('view-mode');
+    document.querySelectorAll('#drawerForm input, #drawerForm select, #drawerForm textarea').forEach(el => el.removeAttribute('readonly'));
+    document.querySelectorAll('#drawerForm select').forEach(el => el.removeAttribute('disabled'));
     
-    // Remove locked element attribute states
-    form.querySelectorAll('input, textarea').forEach(el => el.removeAttribute('readonly'));
-    form.querySelectorAll('select').forEach(el => el.removeAttribute('disabled'));
-    
-    // Toggle Button View State Links
+    // 2. Button toggles
     document.getElementById('drawerEditTriggerBtn').style.display = 'none';
     document.getElementById('drawerSaveBtn').style.display = 'inline-block';
+    
+    // 3. FORCE VISIBILITY OF UPLOAD SECTION
+    const uploadSection = document.getElementById('addFilesContainer');
+    if (uploadSection) {
+        uploadSection.style.display = 'block';
+    }
 }
 
 function disableEditMode() {
@@ -301,6 +370,25 @@ function deleteActiveRecord() {
             showSystemModal('Record Purged', data.message, 'success');
         } else {
             showSystemModal('Action Blocked', data.message, 'error');
+        }
+    });
+}
+function removeFile(id, index) {
+    if(!confirm("Are you sure you want to remove this attachment?")) return;
+
+    const fd = new FormData();
+    fd.append('action', 'remove_file');
+    fd.append('id', id);
+    fd.append('file_index', index);
+
+    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if(data.success) {
+            // This re-runs the function that fetches and renders the file list
+            openDetailDrawer(id); 
+        } else {
+            alert(data.message || "Error removing file.");
         }
     });
 }

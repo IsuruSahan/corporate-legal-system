@@ -6,8 +6,12 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-// Redirect instantly if the user already holds an active verification token session
-if (isset($_SESSION['user_role'])) {
+/**
+ * REDIRECTION BYPASS SECURITY GUARD
+ * Only forward to index.php if the user has an active, authenticated role 
+ * AND they have not explicitly chosen to terminate their session.
+ */
+if (isset($_SESSION['user_role']) && !isset($_SESSION['explicit_logout'])) {
     header("Location: index.php");
     exit;
 }
@@ -28,6 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Validate match using modern standard crypt hashes
             if ($user && password_verify($password, $user['password'])) {
+                
+                // CRITICAL: Clear the explicit logout flag since they are intentionally logging back in
+                if (isset($_SESSION['explicit_logout'])) {
+                    unset($_SESSION['explicit_logout']);
+                }
+
                 // Populate structural context permissions variables
                 $_SESSION['user_id']    = $user['id'];
                 $_SESSION['user_name']  = $user['full_name'];
@@ -51,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=1440, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BenLegal Access Portal</title>
     <link rel="stylesheet" href="/corporate-legal-system/assets/css/style.css">
     <style>

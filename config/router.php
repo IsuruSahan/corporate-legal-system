@@ -48,28 +48,52 @@ switch ($action) {
     /* ==========================================================================
        MODULE A: AGREEMENTS INDEXING & WORKSPACE OPERATIONS
        ========================================================================== */
-    case 'save_agreement':
+case 'save_agreement':
         try {
+            $filePaths = [];
+            
+            // 1. Handle Multiple File Uploads
+            if (!empty($_FILES['agreement_files']['name'][0])) {
+                $uploadDir = '../uploads/agreements/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+                
+                // Loop through each uploaded file
+                foreach ($_FILES['agreement_files']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['agreement_files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $fileName = time() . '_' . basename($_FILES['agreement_files']['name'][$key]);
+                        $targetPath = $uploadDir . $fileName;
+
+                        if (move_uploaded_file($tmpName, $targetPath)) {
+                            $filePaths[] = '/uploads/agreements/' . $fileName;
+                        }
+                    }
+                }
+            }
+
+            // 2. Encode the array of paths into a JSON string for storage
+            $jsonFilePaths = !empty($filePaths) ? json_encode($filePaths) : null;
+
+            // 3. Insert into database
             $stmt = $pdo->prepare("INSERT INTO agreements (
                 group_company_id, title, party_b, assigned_officer_id, 
                 category_id, physical_ref_no, cabinet_id, effective_date, 
                 expiry_date, initial_status, internal_comments, 
-                pa_ref_number, ecf_ref_number
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                pa_ref_number, ecf_ref_number, file_attachment_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             
             $stmt->execute([
                 $_POST['group_company_id'], $_POST['title'], $_POST['party_b'], $_POST['assigned_officer_id'],
                 $_POST['category_id'], $_POST['physical_ref_no'], $_POST['cabinet_id'], $_POST['effective_date'],
                 $_POST['expiry_date'], $_POST['initial_status'], $_POST['internal_comments'], 
-                $_POST['pa_ref_number'], $_POST['ecf_ref_number']
+                $_POST['pa_ref_number'], $_POST['ecf_ref_number'], $jsonFilePaths
             ]);
             
             $newId = $pdo->lastInsertId();
-            recordAuditLog($pdo, 'INSERT', 'Agreements', $newId, "Created agreement entry: " . $_POST['title']);
+            recordAuditLog($pdo, 'INSERT', 'Agreements', $newId, "Created agreement: " . $_POST['title']);
 
-            echo json_encode(['success' => true, 'message' => 'Agreement successfully indexed into the secure contract vault.']);
+            echo json_encode(['success' => true, 'message' => 'Agreement and attachments successfully indexed.']);
         } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'message' => 'Database constraint mismatch: ' . $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
         }
         break;
 
@@ -89,28 +113,80 @@ switch ($action) {
         }
         break;
 
-    case 'update_agreement':
-        try {
-            $stmt = $pdo->prepare("UPDATE agreements SET 
-                group_company_id = ?, title = ?, party_b = ?, assigned_officer_id = ?, 
-                category_id = ?, physical_ref_no = ?, cabinet_id = ?, effective_date = ?, 
-                expiry_date = ?, initial_status = ?, internal_comments = ?, 
-                pa_ref_number = ?, ecf_ref_number = ? WHERE id = ?");
-            
-            $stmt->execute([
-                $_POST['group_company_id'], $_POST['title'], $_POST['party_b'], $_POST['assigned_officer_id'],
-                $_POST['category_id'], $_POST['physical_ref_no'], $_POST['cabinet_id'], $_POST['effective_date'],
-                $_POST['expiry_date'], $_POST['initial_status'], $_POST['internal_comments'], 
-                $_POST['pa_ref_number'], $_POST['ecf_ref_number'], $_POST['id']
-            ]);
+case 'update_agreement':
+    try {
+        $id = $_POST['id'];
+        
+        // 1. Get the CURRENT files from the database first
+        $stmt = $pdo->prepare("SELECT file_attachment_path FROM agreements WHERE id = ?");
+        $stmt->execute([$id]);
+        $existingPaths = json_decode($stmt->fetchColumn(), true) ?: [];
 
-            recordAuditLog($pdo, 'UPDATE', 'Agreements', $_POST['id'], "Revised core metadata parameters for record: " . $_POST['title']);
+        // 2. Handle new uploads and APPEND to the array
+        if (!empty($_FILES['agreement_files']['name'][0])) {
+            $uploadDir = '../uploads/agreements/';
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
-            echo json_encode(['success' => true, 'message' => 'Agreement revisions successfully saved.']);
-        } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'message' => 'Update operation failed: ' . $e->getMessage()]);
+            foreach ($_FILES['agreement_files']['tmp_name'] as $key => $tmpName) {
+                if ($_FILES['agreement_files']['error'][$key] === UPLOAD_ERR_OK) {
+                    $fileName = time() . '_' . basename($_FILES['agreement_files']['name'][$key]);
+                    if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+                        $existingPaths[] = '/uploads/agreements/' . $fileName; // APPENDING
+                    }
+                }
+            }
         }
-        break;
+
+        // 3. Update DB with the MERGED array
+        $stmt = $pdo->prepare("UPDATE agreements SET title=?, group_company_id=?, party_b=?, category_id=?, 
+                               assigned_officer_id=?, physical_ref_no=?, cabinet_id=?, effective_date=?, 
+                               expiry_date=?, initial_status=?, internal_comments=?, pa_ref_number=?, 
+                               ecf_ref_number=?, file_attachment_path=? WHERE id=?");
+        
+        $stmt->execute([
+            $_POST['title'], $_POST['group_company_id'], $_POST['party_b'], $_POST['category_id'],
+            $_POST['assigned_officer_id'], $_POST['physical_ref_no'], $_POST['cabinet_id'], 
+            $_POST['effective_date'], $_POST['expiry_date'], $_POST['initial_status'], 
+            $_POST['internal_comments'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'], 
+            json_encode($existingPaths), $id // Saving the full merged JSON
+        ]);
+
+        echo json_encode(['success' => true, 'message' => 'Files updated successfully.']);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    break;
+
+case 'remove_file':
+    try {
+        $id = $_POST['id'];
+        $indexToRemove = (int)$_POST['file_index'];
+
+        // 1. Fetch current array
+        $stmt = $pdo->prepare("SELECT file_attachment_path FROM agreements WHERE id = ?");
+        $stmt->execute([$id]);
+        $files = json_decode($stmt->fetchColumn(), true) ?: [];
+
+        // 2. Validate and delete physical file
+        if (isset($files[$indexToRemove])) {
+            $physicalPath = '..' . $files[$indexToRemove];
+            if (file_exists($physicalPath)) {
+                unlink($physicalPath);
+            }
+
+            // 3. Remove from array and update DB
+            array_splice($files, $indexToRemove, 1);
+            $stmt = $pdo->prepare("UPDATE agreements SET file_attachment_path = ? WHERE id = ?");
+            $stmt->execute([json_encode($files), $id]);
+            
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'File not found.']);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    break;
 
     case 'delete_agreement':
         try {
@@ -130,35 +206,187 @@ switch ($action) {
         }
         break;
 
+
+
     /* ==========================================================================
-       MODULE B: LITIGATION MATTERS INDEXING ROUTINE
+       MODULE B: LITIGATION WORKSPACE & DRAWER ACTIONS
        ========================================================================== */
-    case 'save_court_case':
+case 'save_court_case':
+    if (empty($_FILES)) {
+        echo json_encode(['success' => false, 'message' => 'No files detected. Check form enctype.']);
+        break;
+    }
         try {
+            $filePaths = [];
+            
+            // 1. Process multiple file uploads
+            if (!empty($_FILES['court_case_files']['name'][0])) {
+                $uploadDir = '../uploads/court_cases/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+                
+                foreach ($_FILES['court_case_files']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['court_case_files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $fileName = time() . '_' . basename($_FILES['court_case_files']['name'][$key]);
+                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+                            $filePaths[] = '/uploads/court_cases/' . $fileName;
+                        }
+                    }
+                }
+            }
+
+            // 2. Prepare JSON string
+            $jsonFilePaths = !empty($filePaths) ? json_encode($filePaths) : null;
+
+            // 3. Insert record with file_attachment_path
             $stmt = $pdo->prepare("INSERT INTO court_cases (
                 group_company_id, case_number, case_parties, assigned_officer_id, 
                 court_id, counsel_name, instructing_attorney, case_description, 
                 next_hearing_date, next_step_date, next_step_description, 
                 cabinet_id, linked_agreement_id, internal_comments, 
-                pa_ref_number, ecf_ref_number
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                pa_ref_number, ecf_ref_number, case_status, file_attachment_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             
             $stmt->execute([
                 $_POST['group_company_id'], $_POST['case_number'], $_POST['case_parties'], $_POST['assigned_officer_id'],
                 $_POST['court_id'], $_POST['counsel_name'], $_POST['instructing_attorney'], $_POST['case_description'],
-                $_POST['next_hearing_date'], $_POST['next_step_date'], $_POST['next_step_description'],
-                $_POST['cabinet_id'], !empty($_POST['linked_agreement_id']) ? $_POST['linked_agreement_id'] : null,
-                $_POST['internal_comments'], $_POST['pa_ref_number'], $_POST['ecf_ref_number']
+                !empty($_POST['next_hearing_date']) ? $_POST['next_hearing_date'] : null,
+                !empty($_POST['next_step_date']) ? $_POST['next_step_date'] : null,
+                $_POST['next_step_description'], $_POST['cabinet_id'], 
+                !empty($_POST['linked_agreement_id']) ? $_POST['linked_agreement_id'] : null,
+                $_POST['internal_comments'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'],
+                !empty($_POST['case_status']) ? $_POST['case_status'] : 'Filing Stage',
+                $jsonFilePaths
             ]);
 
             $newId = $pdo->lastInsertId();
             recordAuditLog($pdo, 'INSERT', 'Court Cases', $newId, "Logged new litigation profile index file: " . $_POST['case_number']);
 
-            echo json_encode(['success' => true, 'message' => 'Court case file successfully committed into the litigation registry.']);
+            echo json_encode(['success' => true, 'message' => 'Court case successfully committed with attachments.']);
         } catch (PDOException $e) {
             echo json_encode(['success' => false, 'message' => 'Database operation error: ' . $e->getMessage()]);
         }
         break;
+
+    case 'get_court_case':
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM court_cases WHERE id = ?");
+            $stmt->execute([$_POST['id']]);
+            $record = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($record) {
+                echo json_encode(['success' => true, 'data' => $record]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Litigation profile record not found inside database directory.']);
+            }
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Database transaction failed: ' . $e->getMessage()]);
+        }
+        break;
+
+case 'update_court_case':
+        try {
+            $id = $_POST['id'];
+
+            // 1. Fetch current file paths from DB
+            $stmt = $pdo->prepare("SELECT file_attachment_path FROM court_cases WHERE id = ?");
+            $stmt->execute([$id]);
+            $existingPaths = json_decode($stmt->fetchColumn(), true) ?: [];
+
+            // 2. Handle new uploads (appended to existing array)
+            if (!empty($_FILES['court_case_files']['name'][0])) {
+                $uploadDir = '../uploads/court_cases/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+
+                foreach ($_FILES['court_case_files']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['court_case_files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $fileName = time() . '_' . basename($_FILES['court_case_files']['name'][$key]);
+                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+                            $existingPaths[] = '/uploads/court_cases/' . $fileName;
+                        }
+                    }
+                }
+            }
+
+            // 3. Update the registry with metadata AND the new JSON file list
+            $stmt = $pdo->prepare("UPDATE court_cases SET 
+                case_parties = ?, group_company_id = ?, case_number = ?, court_id = ?, 
+                assigned_officer_id = ?, counsel_name = ?, instructing_attorney = ?, 
+                case_description = ?, next_hearing_date = ?, next_step_date = ?, 
+                next_step_description = ?, cabinet_id = ?, linked_agreement_id = ?, 
+                pa_ref_number = ?, ecf_ref_number = ?, case_status = ?, internal_comments = ?,
+                file_attachment_path = ? 
+                WHERE id = ?");
+            
+            $stmt->execute([
+                $_POST['case_parties'], $_POST['group_company_id'], $_POST['case_number'], $_POST['court_id'],
+                $_POST['assigned_officer_id'], $_POST['counsel_name'], $_POST['instructing_attorney'],
+                $_POST['case_description'], 
+                !empty($_POST['next_hearing_date']) ? $_POST['next_hearing_date'] : null,
+                !empty($_POST['next_step_date']) ? $_POST['next_step_date'] : null,
+                $_POST['next_step_description'], $_POST['cabinet_id'],
+                !empty($_POST['linked_agreement_id']) ? $_POST['linked_agreement_id'] : null,
+                $_POST['pa_ref_number'], $_POST['ecf_ref_number'], $_POST['case_status'],
+                $_POST['internal_comments'], json_encode($existingPaths), $id
+            ]);
+
+            recordAuditLog($pdo, 'UPDATE', 'Court Cases', $id, "Revised case registry: " . $_POST['case_number']);
+
+            echo json_encode(['success' => true, 'message' => 'Litigation records and attachments updated.']);
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Update failed: ' . $e->getMessage()]);
+        }
+        break;
+
+    case 'delete_court_case':
+        try {
+            $info = $pdo->prepare("SELECT case_number FROM court_cases WHERE id = ?");
+            $info->execute([$_POST['id']]);
+            $caseNum = $info->fetchColumn() ?: 'Unknown';
+
+            $stmt = $pdo->prepare("DELETE FROM court_cases WHERE id = ?");
+            $stmt->execute([$_POST['id']]);
+            
+            recordAuditLog($pdo, 'DELETE', 'Court Cases', $_POST['id'], "Permanently cleared litigation profile index: " . $caseNum);
+
+            echo json_encode(['success' => true, 'message' => 'Litigation profile permanently deleted from the registry.']);
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Purge operation blocked: Active relational constraints exist.']);
+        }
+        break;
+
+case 'remove_court_file':
+    try {
+        $id = $_POST['id'];
+        $indexToRemove = (int)$_POST['file_index'];
+        $targetTable = 'court_cases';
+
+        $stmt = $pdo->prepare("SELECT file_attachment_path FROM {$targetTable} WHERE id = ?");
+        $stmt->execute([$id]);
+        $files = json_decode($stmt->fetchColumn(), true) ?: [];
+
+        if (isset($files[$indexToRemove])) {
+            $relativePath = ltrim($files[$indexToRemove], '/');
+            $baseDir = realpath(__DIR__ . '/../');
+            $fullPath = $baseDir . DIRECTORY_SEPARATOR . $relativePath;
+
+            // 1. Delete physical file
+            if (file_exists($fullPath)) {
+                unlink($fullPath);
+            }
+
+            // 2. CRITICAL: Remove from array AND Update Database
+            array_splice($files, $indexToRemove, 1);
+            $stmt = $pdo->prepare("UPDATE {$targetTable} SET file_attachment_path = ? WHERE id = ?");
+            $stmt->execute([json_encode($files), $id]);
+            
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Index error.']);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    break;
 
     /* ==========================================================================
        MODULE C: ADMIN CUSTOM USER CREATION (FRAME-5 DESIGN)
