@@ -144,6 +144,24 @@ function renderRow(table, r) {
             </tr>`;
         } // End agreements
 
+        case 'payments': {
+    // Determine status badge class based on the 'status' column
+    let statusClass = (r.status === 'Linked') ? 'linked' : 'error';
+    let displayStatus = (r.status === 'Linked') ? 'Linked' : 'Unlinked ECF';
+
+    return `<tr id="payment-row-${r.id}" onclick="openDetailDrawer(${r.id})" style="cursor: pointer;">
+        <td>
+            <div class="primary-line" style="font-weight: 700; color: var(--text-dark);">${r.description || ''}</div>
+            <div style="font-size: 12px; color: var(--text-light);">${r.company_name || ''} | Linked Source: ${r.source_type || 'N/A'} (#${r.linked_source_id || '0'})</div>
+        </td>
+        <td>${r.pa_ref_number || '<span style="color:red;">[ No Input ]</span>'}</td>
+        <td>${r.ecf_ref_number || '<span style="color:red;">[ No Input ]</span>'}</td>
+        <td>${r.due_date ? new Date(r.due_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : ''}</td>
+        <td style="font-weight: 700;">${r.currency || 'Rs.'} ${parseFloat(r.amount || 0).toLocaleString()}</td>
+        <td><span class="status-badge ${statusClass}" style="font-weight: 700;">${displayStatus}</span></td>
+    </tr>`;
+}
+
         default:
             return `<tr><td colspan="100%">Unknown table structure</td></tr>`;
     }
