@@ -6,19 +6,23 @@ require_once __DIR__ . '/auth.php';
 // Force clean JSON headers for async cross-communication
 header('Content-Type: application/json');
 
+// --- FIX: Define $action BEFORE using it ---
+$action = $_POST['action'] ?? '';
+
 // Guardrail: Enforce asynchronous POST request routing verification
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid transaction vector method.']);
     exit;
 }
 
-$action = $_POST['action'] ?? '';
+$readOnlyActions = ['fetch_paginated_data', 'get_agreement', 'get_court_case'];
 
-// Check general operational privileges (Viewers can never modify state parameters)
-if ($_SESSION['user_role'] === 'Viewer') {
-    echo json_encode(['success' => false, 'message' => 'Privilege Violation: Your current auditing scope is strictly Read-Only.']);
+// 2. Now $action is defined, so this check will execute correctly
+if ($_SESSION['user_role'] === 'Viewer' && !in_array($action, $readOnlyActions)) {
+    echo json_encode(['success' => false, 'message' => 'Privilege Violation: Read-Only.']);
     exit;
 }
+
 
 /**
  * HELPER UTILITY: TRANSACTION LOG COMMITTER (WITH ERROR TRACING)
