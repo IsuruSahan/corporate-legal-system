@@ -635,7 +635,7 @@ case 'remove_court_file':
 case 'fetch_paginated_data':
     $table = $_POST['table'] ?? '';
     $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
-    $limit = 6; // Keep your limit
+    $limit = 8; // Keep your limit
     $offset = ($page - 1) * $limit;
 
     if ($table === 'court_cases') {
@@ -661,6 +661,11 @@ case 'fetch_paginated_data':
                   LEFT JOIN group_companies gc ON p.group_company_id = gc.id
                   ORDER BY p.id DESC LIMIT ? OFFSET ?";
     }
+    elseif ($table === 'physical_archives_master') {
+        $query = "SELECT * FROM physical_archives_master 
+                  ORDER BY system_ref_no DESC 
+                  LIMIT ? OFFSET ?";
+    }
     else {
         // Fallback for tables without specific joins
         $query = "SELECT * FROM {$table} ORDER BY id DESC LIMIT ? OFFSET ?";
@@ -670,5 +675,240 @@ case 'fetch_paginated_data':
     $stmt->execute([$limit, $offset]);
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
     break;
+
+    case 'fetch_all_agenda_tasks':
+        try {
+            // Evaluates identical system rules as index.php but releases the LIMIT boundary constraint
+            $stmt = $pdo->query("
+                SELECT id, CONCAT('Review Pending Agreement: ', title) AS task_title, 'Pending' AS task_status, '#f59e0b' AS left_border_color FROM agreements WHERE initial_status = 'Pending'
+                UNION ALL
+                SELECT id, CONCAT('Add New Court Case: ', case_parties) AS task_title, 'Filing Stage' AS task_status, '#3b82f6' AS left_border_color FROM court_cases WHERE case_status = 'Filing Stage'
+                UNION ALL
+                SELECT id, CONCAT('Link Finance Codes for: ', description, ' (Rs. ', FORMAT(amount, 0), ')') AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color FROM payments WHERE pa_ref_number = '' OR pa_ref_number IS NULL OR ecf_ref_number = '' OR ecf_ref_number IS NULL
+                UNION ALL
+                SELECT id, CONCAT('Upload Document Scan to Vault for: ', title) AS task_title, 'Upload Pending' AS task_status, '#64748b' AS left_border_color FROM agreements WHERE file_attachment_path IS NULL OR file_attachment_path = '[]' OR file_attachment_path = 'null'
+                ORDER BY id DESC
+            ");
+            echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+        case 'filter_dashboard_metrics':
+        try {
+            $companyId = !empty($_POST['group_company_id']) ? intval($_POST['group_company_id']) : null;
+            $missingEcfOnly = !empty($_POST['missing_ecf_only']) && $_POST['missing_ecf_only'] === '1';
+
+            // Base query modifications based on dropdown criteria choices
+            $compQueryPart = $companyId ? " AND group_company_id = {$companyId} " : "";
+            $compQueryPartWhere = $companyId ? " WHERE group_company_id = {$companyId} " : "";
+
+            // --- RE-COMPUTE METRICS WITH FILTER CONDITIONAL STATEMENTS ---
+            $totalActiveAgreements = $pdo->query("SELECT COUNT(*) FROM agreements WHERE initial_status = 'Active' {$compQueryPart}")->fetchColumn();
+
+            $totalCases = $pdo->query("SELECT COUNT(*) FROM court_cases " . ($companyId ? "WHERE group_company_id = {$companyId}" : ""))->fetchColumn();
+            $settledCases = $pdo->query("SELECT COUNT(*) FROM court_cases WHERE case_status = 'Settled' {$compQueryPart}")->fetchColumn();
+            $disputeResolutionRate = $totalCases > 0 ? round(($settledCases / $totalCases) * 100, 1) : 100.0;
+
+            // Conditional parameters match counts logic arrays
+            $stmtPaMissing = $pdo->query("SELECT COUNT(*) FROM (
+                SELECT id FROM agreements WHERE (pa_ref_number IS NULL OR pa_ref_number = '') {$compQueryPart}
+                UNION ALL
+                SELECT id FROM court_cases WHERE (pa_ref_number IS NULL OR pa_ref_number = '') {$compQueryPart}
+            ) as combined_pa");
+            $awaitingPaInitialization = $stmtPaMissing->fetchColumn();
+
+            $archiveMatchedAgreements = $pdo->query("SELECT COUNT(*) FROM agreements WHERE cabinet_id IS NOT NULL AND cabinet_id > 0 {$compQueryPart}")->fetchColumn();
+            $totalAgreementsGlobal = $pdo->query("SELECT COUNT(*) FROM agreements " . ($companyId ? "WHERE group_company_id = {$companyId}" : ""))->fetchColumn();
+            $archiveMatchRate = $totalAgreementsGlobal > 0 ? round(($archiveMatchedAgreements / $totalAgreementsGlobal) * 100, 0) : 100;
+
+            $pendingAgreementsCount = $pdo->query("SELECT COUNT(*) FROM agreements WHERE initial_status = 'Pending' {$compQueryPart}")->fetchColumn();
+            $casesRenewalCount = $pdo->query("SELECT COUNT(*) FROM court_cases WHERE case_status IN ('Filing Stage', 'In Progress') {$compQueryPart}")->fetchColumn();
+
+            $nextHearingRaw = $pdo->query("SELECT next_hearing_date FROM court_cases WHERE next_hearing_date >= CURDATE() {$compQueryPart} ORDER BY next_hearing_date ASC LIMIT 1")->fetchColumn();
+            $nextHearingDate = $nextHearingRaw ? date('F d', strtotime($nextHearingRaw)) : 'None Scheduled';
+
+            $awaitingEcfAmount = $pdo->query("SELECT SUM(amount) FROM payments WHERE (ecf_ref_number IS NULL OR ecf_ref_number = '') " . ($companyId ? " AND id IN (SELECT id FROM agreements WHERE group_company_id={$companyId}) " : ""))->fetchColumn() ?: 0.00;
+
+            // --- FETCH FILTERED DATA ARRAYS ---
+// --- FETCH FILTERED DATA ARRAYS ---
+            $activeLitigations = $pdo->query("
+                SELECT cc.id, cc.case_parties, cc.case_status, gc.company_name AS group_company, cr.room_name
+                FROM court_cases cc
+                JOIN group_companies gc ON cc.group_company_id = gc.id
+                JOIN court_rooms cr ON cc.court_id = cr.id
+                WHERE cc.case_status != 'Settled' {$compQueryPart}
+                ORDER BY cc.id DESC LIMIT 2
+            ")->fetchAll(PDO::FETCH_ASSOC);
+
+            $linkedAgreements = $pdo->query("
+                SELECT a.id, a.title, a.pa_ref_number, a.ecf_ref_number
+                FROM agreements a
+                WHERE 1=1 {$compQueryPart}
+                ORDER BY a.id DESC LIMIT 1
+            ")->fetchAll(PDO::FETCH_ASSOC);
+
+            // --- FIXED TASKS QUERY SECTION ---
+            // We now pull missing codes directly from agreements and court_cases rows
+            $agendaSql = "
+                SELECT id, CONCAT('Check Pending Agreement: ', title) AS task_title, 'Pending' AS task_status, '#f59e0b' AS left_border_color 
+                FROM agreements WHERE initial_status = 'Pending' " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
+                
+                UNION ALL
+                
+                SELECT id, CONCAT('Add New Court Case: ', case_parties) AS task_title, 'Filing Stage' AS task_status, '#3b82f6' AS left_border_color 
+                FROM court_cases WHERE case_status = 'Filing Stage' " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
+                
+                UNION ALL
+                
+                SELECT id, CONCAT('Missing tracking code for Agreement: ', title) AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color 
+                FROM agreements WHERE (pa_ref_number = '' OR pa_ref_number IS NULL OR ecf_ref_number = '' OR ecf_ref_number IS NULL) " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
+                
+                UNION ALL
+                
+                SELECT id, CONCAT('Missing tracking code for Case: ', case_number) AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color 
+                FROM court_cases WHERE (pa_ref_number = '' OR pa_ref_number IS NULL OR ecf_ref_number = '' OR ecf_ref_number IS NULL) " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
+                
+                UNION ALL
+                
+                SELECT id, CONCAT('Upload Document Scan for: ', title) AS task_title, 'Upload Pending' AS task_status, '#64748b' AS left_border_color 
+                FROM agreements WHERE (file_attachment_path IS NULL OR file_attachment_path = '[]' OR file_attachment_path = 'null') " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
+                
+                ORDER BY id DESC LIMIT 6";
+            
+            $agendaTasks = $pdo->query($agendaSql)->fetchAll(PDO::FETCH_ASSOC);
+
+            // If the alert filter button is clicked, filter down only to tracking row entries
+            if ($missingEcfOnly) {
+                $agendaTasks = array_filter($agendaTasks, function($t) { 
+                    return $t['task_status'] === 'Missing Ref'; 
+                });
+            }
+
+            // --- GENERATE HTML STRING LAYOUT OUTPUTS ---
+            ob_start();
+            ?>
+            <!-- Zone 1: Top Stats Cards -->
+            <div class="health-cards-matrix" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                    <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">Active Contracts</div>
+                    <div style="font-size: 32px; font-weight: 800; color: #1e293b; margin-top: 8px;"><?php echo $totalActiveAgreements; ?></div>
+                </div>
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                    <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">Finished Cases</div>
+                    <div style="font-size: 32px; font-weight: 800; color: #0f766e; margin-top: 8px;"><?php echo $disputeResolutionRate; ?>%</div>
+                </div>
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                    <div style="font-size: 12px; font-weight: 700; color: #ea580c; text-transform: uppercase;">Needs Code ID</div>
+                    <div style="font-size: 32px; font-weight: 800; color: #ea580c; margin-top: 8px;"><?php echo $awaitingPaInitialization; ?></div>
+                </div>
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                    <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">Filing Match</div>
+                    <div style="font-size: 32px; font-weight: 800; color: #16a34a; margin-top: 8px;"><?php echo $archiveMatchRate; ?>%</div>
+                </div>
+            </div>
+            <!-- Zone 2: Task Agenda -->
+            <div style="background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 24px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <div>
+                        <h2 style="font-size: 16px; font-weight: 700; color: #0f172a; margin: 0;">Tasks to Do</h2>
+                        <p style="font-size: 11px; color: #94a3b8; margin: 2px 0 0 0;">List of things that need fixing right now</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 6px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #475569;" onclick="openAgendaDrawer()">See All Tasks</button>
+                </div>
+                <div class="agenda-list-stack" style="display: flex; flex-direction: column; gap: 10px;">
+                    <?php if (count($agendaTasks) > 0): ?>
+                        <?php foreach ($agendaTasks as $task): ?>
+                            <?php 
+                                $badgeType = 'progress';
+                                if ($task['task_status'] === 'Pending') $badgeType = 'pending';
+                                if ($task['task_status'] === 'Filing Stage') $badgeType = 'progress';
+                                if ($task['task_status'] === 'Missing Ref') $badgeType = 'error';
+                                if ($task['task_status'] === 'Upload Pending') $badgeType = 'pending';
+                            ?>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 14px 20px; border-radius: 8px; border-left: 4px solid <?php echo $task['left_border_color']; ?>; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
+                                <span style="font-size: 13px; font-weight: 600; color: #334155;"><?php echo htmlspecialchars($task['task_title']); ?></span>
+                                <span class="status-badge <?php echo $badgeType; ?>" style="font-weight: 700; font-size: 10px; padding: 4px 10px; text-transform: uppercase; border-radius: 4px;"><?php echo htmlspecialchars($task['task_status']); ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <div style="background: #f8fafc; padding: 32px; border-radius: 8px; text-align: center; color: #64748b; font-size: 13px; font-weight: 600; border: 1px dashed #cbd5e1;">✔ No tasks found! Everything looks clean.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php
+            $leftPanelHtml = ob_get_clean();
+
+            ob_start();
+            ?>
+            <!-- Backlog Metrics -->
+            <div>
+                <h3 style="font-size: 13px; font-weight: 700; color: #0f172a; margin: 0 0 16px 0; text-transform: uppercase;">Total Backlog</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <div style="font-size: 28px; font-weight: 800; color: #1e293b; line-height: 1;"><?php echo $pendingAgreementsCount; ?></div>
+                        <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Pending Drafts</div>
+                    </div>
+                    <div style="background: #fff7ed; padding: 16px; border-radius: 8px; border: 1px solid #ffedd5;">
+                        <div style="font-size: 28px; font-weight: 800; color: #c2410c; line-height: 1;"><?php echo $casesRenewalCount; ?></div>
+                        <div style="font-size: 11px; font-weight: 600; color: #c2410c; margin-top: 6px;">Open Cases</div>
+                    </div>
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <div style="font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.2;"><?php echo $nextHearingDate; ?></div>
+                        <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Next Hearing</div>
+                    </div>
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <div style="font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.2;">Rs. <?php echo number_format($awaitingEcfAmount, 0); ?></div>
+                        <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Open Payments</div>
+                    </div>
+                </div>
+            </div>
+            <!-- Active Litigation List -->
+            <div style="margin-top: 24px;">
+                <h3 style="font-size: 13px; font-weight: 700; color: #64748b; margin: 0 0 12px 0; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Active Cases</h3>
+                <div class="feed-list" style="display: flex; flex-direction: column; gap: 14px;">
+                    <?php foreach ($activeLitigations as $lit): ?>
+                        <a href="/corporate-legal-system/court-cases/index.php" style="text-decoration: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+                            <div style="max-width: 280px;">
+                                <div style="font-size: 13px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?php echo htmlspecialchars($lit['case_parties']); ?></div>
+                                <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;"><?php echo htmlspecialchars($lit['group_company']); ?> | <?php echo htmlspecialchars($lit['room_name']); ?></div>
+                            </div>
+                            <span style="color: #94a3b8; font-weight: bold; font-size: 16px;">&rsaquo;</span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <!-- Agreements Feed -->
+            <div style="margin-top: 24px;">
+                <h3 style="font-size: 13px; font-weight: 700; color: #64748b; margin: 0 0 12px 0; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Recent Agreements</h3>
+                <div class="feed-list" style="display: flex; flex-direction: column; gap: 14px;">
+                    <?php foreach ($linkedAgreements as $agr): ?>
+                        <a href="/corporate-legal-system/agreements/index.php" style="text-decoration: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+                            <div style="max-width: 280px;">
+                                <div style="font-size: 13px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?php echo htmlspecialchars($agr['title']); ?></div>
+                                <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">PA: <?php echo htmlspecialchars($agr['pa_ref_number'] ?: 'N/A'); ?> | ECF: <?php echo htmlspecialchars($agr['ecf_ref_number'] ?: 'N/A'); ?></div>
+                            </div>
+                            <span style="color: #94a3b8; font-weight: bold; font-size: 16px;">&rsaquo;</span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php
+            $rightPanelHtml = ob_get_clean();
+
+            echo json_encode([
+                'success' => true,
+                'html' => [
+                    'left_panel' => $leftPanelHtml,
+                    'right_panel' => $rightPanelHtml
+                ]
+            ]);
+            exit;
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            exit;
+        }
+        break;
 }
 ?>

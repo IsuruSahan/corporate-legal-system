@@ -162,6 +162,34 @@ function renderRow(table, r) {
     </tr>`;
 }
 
+case 'physical_archives_master': {
+            // Check raw file attachment contents for valid paths, avoiding blank configurations
+            let fileData = r.raw_file_field;
+            let hasScan = (fileData && fileData !== '[]' && fileData !== 'null' && fileData !== '');
+            
+            let statusClass = hasScan ? 'text-success' : 'text-danger';
+            let statusText = hasScan ? '✔ Digital Scanned' : '⚠ Upload Pending';
+            let statusColor = hasScan ? '#22c55e' : '#ef4444';
+
+            return `<tr>
+                <td><span class="text-data-bold" style="font-weight: 700; color: var(--text-dark);">${r.physical_location || ''}</span></td>
+                <td><span class="text-data-regular" style="font-family: monospace; font-weight: 700; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; color: #1e293b;">${r.system_ref_no || ''}</span></td>
+                <td class="title-meta-cell">
+                    <div class="primary-line" style="font-weight: 700; color: var(--text-dark); font-size: 14px;">${r.primary_title || ''}</div>
+                    <div class="secondary-sub" style="font-size: 12px; color: var(--text-light); margin-top: 2px;">
+                        <strong class="entity-marker-text" style="font-weight: 600; color: #475569;">${r.group_company || ''}</strong> 
+                        <span style="margin: 0 4px; color: #cbd5e1;">|</span> ${r.structural_subtext || ''}
+                    </div>
+                </td>
+                <td><span class="text-data-regular" style="color: var(--text-light); font-size: 13px; font-weight: 600;">${r.module_type || ''}</span></td>
+                <td>
+                    <span class="${statusClass}" style="font-weight: 700; font-size: 13px; color: ${statusColor};">
+                        ${statusText}
+                    </span>
+                </td>
+            </tr>`;
+        }
+
         default:
             return `<tr><td colspan="100%">Unknown table structure</td></tr>`;
     }

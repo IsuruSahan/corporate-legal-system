@@ -4,6 +4,9 @@ require_once __DIR__ . '/../config/auth.php';
 $page_title = "Payment Milestone Ledger";
 $breadcrumb = "PAYMENTS / WORKSPACE";
 require_once __DIR__ . '/../includes/header.php';
+
+
+
 $companies = $pdo->query("SELECT * FROM group_companies ORDER BY company_name ASC")->fetchAll();
 $agreements = $pdo->query("SELECT id, title FROM agreements ORDER BY title ASC")->fetchAll();
 $court_cases = $pdo->query("SELECT id, case_number FROM court_cases ORDER BY case_number ASC")->fetchAll();
@@ -143,7 +146,7 @@ function openDetailDrawer(id) {
             const sourceType = d.source_type;
 
             console.log("Looking up:", sourceType, "with ID:", sourceId);
-console.log("Available Agreements:", agreements);
+            console.log("Available Agreements:", agreements);
 
             if (sourceType === 'Agreement') {
                 const found = agreements.find(a => a.id == sourceId);

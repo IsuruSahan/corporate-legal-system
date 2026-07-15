@@ -38,7 +38,7 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
 <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
     <?php if ($_SESSION['user_role'] !== 'Viewer'): ?>
         <a href="/corporate-legal-system/court-cases/add.php" class="btn btn-primary btn-tall" style="text-decoration: none; font-size: 13px; font-weight: 700;">
-            + Log Litigation Profile
+            + Create Court case
         </a>
     <?php endif; ?>
 </div>

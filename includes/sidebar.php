@@ -5,7 +5,9 @@ $current_uri = $_SERVER['REQUEST_URI'];
 <div class="sidebar">
     <a href="/corporate-legal-system/index.php" class="brand-logo">BenLegal</a>
     <ul class="nav-links" style="display: flex; flex-direction: column; height: calc(100% - 50px);">
-        <li class="nav-item <?php echo (strpos($current_uri, 'index.php') !== false || substr($current_uri, -1) === 'system/') ? 'active' : ''; ?>">
+
+
+        <li class="nav-item <?php echo ($current_uri === '/corporate-legal-system/' || $current_uri === '/corporate-legal-system/index.php') ? 'active' : ''; ?>">
             <a href="/corporate-legal-system/index.php">Home</a>
         </li>
         <li class="nav-item <?php echo (strpos($current_uri, '/agreements/') !== false) ? 'active' : ''; ?>">
@@ -20,9 +22,9 @@ $current_uri = $_SERVER['REQUEST_URI'];
         <li class="nav-item <?php echo (strpos($current_uri, '/archives/') !== false) ? 'active' : ''; ?>">
             <a href="/corporate-legal-system/archives/index.php">Physical Archives</a>
         </li>
-        <li class="nav-item <?php echo (strpos($current_uri, '/secretarial/') !== false) ? 'active' : ''; ?>">
+        <!-- <li class="nav-item <?php echo (strpos($current_uri, '/secretarial/') !== false) ? 'active' : ''; ?>">
             <a href="/corporate-legal-system/secretarial/index.php">Secretarial Vault</a>
-        </li>
+        </li> -->
         
         <?php if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'Admin'): ?>
             <li class="nav-item <?php echo (strpos($current_uri, '/users/') !== false) ? 'active' : ''; ?>">
