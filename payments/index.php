@@ -18,19 +18,48 @@ $court_cases = $pdo->query("SELECT id, case_number FROM court_cases ORDER BY cas
     <?php endif; ?>
 </div>
 
-<div class="filtering-sub-bar" style="display: flex; gap: 16px; margin-bottom: 24px; align-items: center; background: var(--surface-white); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
-    <div class="search-wrapper-input" style="flex: 1; max-width: 320px; margin-bottom: 0;">
-        <input type="text" id="caseSearchInput" onkeyup="filterCasesMatrix()" placeholder="Search case metrics, description, party bounds...">
+<!-- Dynamic URL-Driven Filtering System Panel Structure -->
+<form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; align-items: center; background: var(--surface-white); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
+    
+    <!-- 1. Text Search Input (Description / Details) -->
+    <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
+        <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search by payment details, description..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
+    </div>
+
+    <!-- 2. PA REFERENCE Search Input -->
+    <div class="search-wrapper-input" style="width: 150px; margin-bottom: 0;">
+        <input type="text" name="pa_ref" id="paRefInput" class="form-field-input" placeholder="PA Ref No..." value="<?php echo htmlspecialchars($_GET['pa_ref'] ?? ''); ?>" style="margin-bottom: 0;">
+    </div>
+
+    <!-- 3. ECF REFERENCE Search Input -->
+    <div class="search-wrapper-input" style="width: 150px; margin-bottom: 0;">
+        <input type="text" name="ecf_ref" id="ecfRefInput" class="form-field-input" placeholder="ECF Ref No..." value="<?php echo htmlspecialchars($_GET['ecf_ref'] ?? ''); ?>" style="margin-bottom: 0;">
     </div>
     
-    <select id="filterEntity" onchange="filterCasesMatrix()" class="dropdown-selector-filter" style="max-width: 200px; margin-bottom: 0;">
-        <option value="">🏢 All Corporate Entities</option>
-        <?php foreach ($companies as $c): ?>
-            <option value="<?php echo htmlspecialchars($c['company_name']); ?>"><?php echo htmlspecialchars($c['company_name']); ?></option>
-        <?php endforeach; ?>
-    </select>
+    <!-- 4. CORPORATE ENTITY Dropdown Filter -->
+    <div style="margin-bottom: 0;">
+        <select name="entity" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; font-size: 13px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+            <option value="">🏢 Corporate Entity (All)</option>
+            <?php foreach ($companies as $c): ?>
+                <option value="<?php echo $c['id']; ?>" <?php echo (($_GET['entity'] ?? '') == $c['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($c['company_name']); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
 
-</div>
+    <!-- 5. LINKED SOURCE TYPE Dropdown Filter (Agreement vs Court Case) -->
+    <div style="margin-bottom: 0;">
+        <select name="source_type" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; font-size: 13px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+            <option value="">🔗 Source Origin (All)</option>
+            <option value="Agreement" <?php echo (($_GET['source_type'] ?? '') === 'Agreement') ? 'selected' : ''; ?>>Agreement Records</option>
+            <option value="Court Case" <?php echo (($_GET['source_type'] ?? '') === 'Court Case') ? 'selected' : ''; ?>>Litigation / Court Cases</option>
+        </select>
+    </div>
+
+    <!-- 6. Wipe Clear Controls Button -->
+    <?php if (!empty($_GET['entity']) || !empty($_GET['source_type']) || !empty($_GET['pa_ref']) || !empty($_GET['ecf_ref']) || !empty($_GET['search'])): ?>
+        <a href="index.php" class="btn btn-secondary" style="padding: 8px 14px; font-size: 13px; text-decoration: none; border-radius: 6px; background: #f1f5f9; color: #475569; font-weight: 600;">Clear</a>
+    <?php endif; ?>
+</form>
 
 <div class="data-ledger-card">
     <table class="data-ledger-table" id="paymentsLedgerGrid">
@@ -113,9 +142,28 @@ $court_cases = $pdo->query("SELECT id, case_number FROM court_cases ORDER BY cas
 const agreements = <?php echo json_encode($agreements); ?>;
     const courtCases = <?php echo json_encode($court_cases); ?>
 
-    initPagination('payments', 'data-body-payments');
-    document.addEventListener("DOMContentLoaded", () => paginate('payments', 'data-body-payments', 1));
+   
+// Initialize pagination engine control nodes on system load
+    document.addEventListener("DOMContentLoaded", function() {
+        initPagination('payments', 'data-body-payments');
+        paginate('payments', 'data-body-payments', 1);
 
+        // Bind interactive event capture properties to physical search input nodes
+        const searchInput = document.getElementById('tableSearchInput');
+        const paInput = document.getElementById('paRefInput');
+        const ecfInput = document.getElementById('ecfRefInput');
+        
+        const submitFormOnEnter = function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.form.submit();
+            }
+        };
+
+        if (searchInput) searchInput.addEventListener('keypress', submitFormOnEnter);
+        if (paInput)      paInput.addEventListener('keypress', submitFormOnEnter);
+        if (ecfInput)     ecfInput.addEventListener('keypress', submitFormOnEnter);
+    });
 function openDetailDrawer(id) {
     const fd = new FormData(); 
     fd.append('action', 'get_payment'); 

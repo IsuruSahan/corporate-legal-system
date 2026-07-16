@@ -652,6 +652,12 @@ case 'fetch_paginated_data':
     $courtId      = !empty($_POST['court_id']) ? intval($_POST['court_id']) : null;
     $caseNoFilter = !empty($_POST['case_number']) ? trim($_POST['case_number']) : null;
     $caseStatus   = !empty($_POST['case_status']) ? trim($_POST['case_status']) : null;
+    
+
+    // Extract domain-specific payment parameters cleanly
+    $paRefFilter  = !empty($_POST['pa_ref_number']) ? trim($_POST['pa_ref_number']) : null;
+    $ecfRefFilter = !empty($_POST['ecf_ref_number']) ? trim($_POST['ecf_ref_number']) : null;
+    $sourceType   = !empty($_POST['source_type']) ? trim($_POST['source_type']) : null;
 
     // --- QUERY BUILDING ZONE ---
     if ($table === 'court_cases') { // FIXED: Re-added the missing condition checker here
@@ -689,15 +695,18 @@ case 'fetch_paginated_data':
         
         $query .= " ORDER BY a.id DESC LIMIT :limit OFFSET :offset";
     } 
-    elseif ($table === 'payments') {
+elseif ($table === 'payments') {
         $query = "SELECT p.*, gc.company_name 
                   FROM payments p
                   LEFT JOIN group_companies gc ON p.group_company_id = gc.id
                   WHERE 1=1";
                   
-        if ($companyId) {
-            $query .= " AND p.group_company_id = :company_id";
-        }
+        if ($companyId)    $query .= " AND p.group_company_id = :company_id";
+        if ($sourceType)   $query .= " AND p.source_type = :source_type";
+        if ($paRefFilter)  $query .= " AND p.pa_ref_number LIKE :pa_ref";
+        if ($ecfRefFilter) $query .= " AND p.ecf_ref_number LIKE :ecf_ref";
+        if ($searchTerm)   $query .= " AND p.description LIKE :search";
+        
         $query .= " ORDER BY p.id DESC LIMIT :limit OFFSET :offset";
     }
     else {
@@ -731,6 +740,13 @@ case 'fetch_paginated_data':
         if ($caseNoFilter)$stmt->bindValue(':case_number', '%' . $caseNoFilter . '%', PDO::PARAM_STR);
         if ($caseStatus)  $stmt->bindValue(':case_status', $caseStatus, PDO::PARAM_STR);
         if ($searchTerm)  $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+    }
+    elseif ($table === 'payments') {
+        if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+        if ($sourceType)   $stmt->bindValue(':source_type', $sourceType, PDO::PARAM_STR);
+        if ($paRefFilter)  $stmt->bindValue(':pa_ref', '%' . $paRefFilter . '%', PDO::PARAM_STR);
+        if ($ecfRefFilter) $stmt->bindValue(':ecf_ref', '%' . $ecfRefFilter . '%', PDO::PARAM_STR);
+        if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
     }
     else {
         if ($companyId && $table !== 'users') {

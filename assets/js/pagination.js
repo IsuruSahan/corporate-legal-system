@@ -53,6 +53,10 @@ function paginate(table, containerId, pageNumber) {
     // Litigation (Court Cases) specific parameters
     const activeCourtFilter    = urlParams.get('court') || '';
     const activeCaseNumFilter  = urlParams.get('case_number') || '';
+    // Payment specific URL filters
+    const activePaRefFilter    = urlParams.get('pa_ref') || '';
+    const activeEcfRefFilter   = urlParams.get('ecf_ref') || '';
+    const activeSourceFilter   = urlParams.get('source_type') || '';
 
     const fd = new FormData();
     fd.append('action', 'fetch_paginated_data');
@@ -71,6 +75,10 @@ function paginate(table, containerId, pageNumber) {
     // 3. Map Litigation context variables accurately depending on routing paths
     if (activeCourtFilter)    fd.append('court_id', activeCourtFilter);
     if (activeCaseNumFilter)  fd.append('case_number', activeCaseNumFilter);
+    // Map Payment modular payload variants
+    if (activePaRefFilter)  fd.append('pa_ref_number', activePaRefFilter);
+    if (activeEcfRefFilter) fd.append('ecf_ref_number', activeEcfRefFilter);
+    if (activeSourceFilter) fd.append('source_type', activeSourceFilter);
 
     // 4. Status mapping logic across distinct tables
     if (activeStatusFilter) {
