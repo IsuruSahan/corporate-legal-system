@@ -640,15 +640,21 @@ case 'fetch_paginated_data':
     $limit = 8;
     $offset = ($page - 1) * $limit;
     
-    // Capture all incoming dynamic filter variables safely
+    // Capture all incoming dynamic filter variables safely in a single global assignment zone
     $companyId    = !empty($_POST['group_company_id']) ? intval($_POST['group_company_id']) : null;
     $categoryId   = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
     $officerId    = !empty($_POST['assigned_officer_id']) ? intval($_POST['assigned_officer_id']) : null;
     $cabinetId    = !empty($_POST['cabinet_id']) ? intval($_POST['cabinet_id']) : null;
     $statusFilter = !empty($_POST['initial_status']) ? trim($_POST['initial_status']) : null;
     $searchTerm   = !empty($_POST['search_term']) ? trim($_POST['search_term']) : null;
+    
+    // Extract domain-specific litigation parameters cleanly without scope shadowing
+    $courtId      = !empty($_POST['court_id']) ? intval($_POST['court_id']) : null;
+    $caseNoFilter = !empty($_POST['case_number']) ? trim($_POST['case_number']) : null;
+    $caseStatus   = !empty($_POST['case_status']) ? trim($_POST['case_status']) : null;
 
-    if ($table === 'court_cases') {
+    // --- QUERY BUILDING ZONE ---
+    if ($table === 'court_cases') { // FIXED: Re-added the missing condition checker here
         $query = "SELECT cc.*, gc.company_name, cr.room_name, u.full_name AS officer_name 
                   FROM court_cases cc
                   LEFT JOIN group_companies gc ON cc.group_company_id = gc.id
@@ -656,11 +662,15 @@ case 'fetch_paginated_data':
                   LEFT JOIN users u ON cc.assigned_officer_id = u.id
                   WHERE 1=1";
                   
-        if ($companyId) {
-            $query .= " AND cc.group_company_id = :company_id";
-        }
+        if ($companyId)   $query .= " AND cc.group_company_id = :company_id";
+        if ($courtId)     $query .= " AND cc.court_id = :court_id";
+        if ($officerId)   $query .= " AND cc.assigned_officer_id = :officer_id";
+        if ($caseNoFilter)$query .= " AND cc.case_number LIKE :case_number";
+        if ($caseStatus)  $query .= " AND cc.case_status = :case_status";
+        if ($searchTerm)  $query .= " AND (cc.case_parties LIKE :search OR cc.case_description LIKE :search)";
+        
         $query .= " ORDER BY cc.id DESC LIMIT :limit OFFSET :offset";
-    } 
+    }
     elseif ($table === 'agreements') {
         $query = "SELECT a.*, gc.company_name, ac.category_name, u.full_name AS officer_name, cb.cabinet_location 
                   FROM agreements a
@@ -670,7 +680,6 @@ case 'fetch_paginated_data':
                   LEFT JOIN archive_cabinets cb ON a.cabinet_id = cb.id
                   WHERE 1=1";
                   
-        // Inject new criteria checks into the query structure dynamically
         if ($companyId)    $query .= " AND a.group_company_id = :company_id";
         if ($categoryId)   $query .= " AND a.category_id = :category_id";
         if ($officerId)    $query .= " AND a.assigned_officer_id = :officer_id";
@@ -699,14 +708,14 @@ case 'fetch_paginated_data':
         $query .= " ORDER BY id DESC LIMIT :limit OFFSET :offset";
     }
     
-    // Prepare transaction state parameters explicitly
+    // --- DATABASE EXECUTION STACK ---
     $stmt = $pdo->prepare($query);
     
-    // Bind global pagination integer parameters
+    // Bind global pagination integer parameters via bindValue explicitly
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     
-    // Bind contextual table parameters securely based on module type
+    // Bind contextual conditional properties safely depending on current runtime requirements
     if ($table === 'agreements') {
         if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
         if ($categoryId)   $stmt->bindValue(':category_id', $categoryId, PDO::PARAM_INT);
@@ -714,7 +723,16 @@ case 'fetch_paginated_data':
         if ($cabinetId)    $stmt->bindValue(':cabinet_id', $cabinetId, PDO::PARAM_INT);
         if ($statusFilter) $stmt->bindValue(':status', $statusFilter, PDO::PARAM_STR);
         if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
-    } else {
+    } 
+    elseif ($table === 'court_cases') {
+        if ($companyId)   $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+        if ($courtId)     $stmt->bindValue(':court_id', $courtId, PDO::PARAM_INT);
+        if ($officerId)   $stmt->bindValue(':officer_id', $officerId, PDO::PARAM_INT);
+        if ($caseNoFilter)$stmt->bindValue(':case_number', '%' . $caseNoFilter . '%', PDO::PARAM_STR);
+        if ($caseStatus)  $stmt->bindValue(':case_status', $caseStatus, PDO::PARAM_STR);
+        if ($searchTerm)  $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+    }
+    else {
         if ($companyId && $table !== 'users') {
             $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
         }

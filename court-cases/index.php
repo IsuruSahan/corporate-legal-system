@@ -43,32 +43,56 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
     <?php endif; ?>
 </div>
 
-<div class="filtering-sub-bar" style="display: flex; gap: 16px; margin-bottom: 24px; align-items: center; background: var(--surface-white); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
-    <div class="search-wrapper-input" style="flex: 1; max-width: 320px; margin-bottom: 0;">
-        <input type="text" id="caseSearchInput" onkeyup="filterCasesMatrix()" placeholder="Search case metrics, description, party bounds...">
+<form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; align-items: center; background: var(--surface-white); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
+    <!-- 1. Text Search Input (Filters by Case Title / Litigating Parties or Dispute Summary Details) -->
+    <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
+        <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search by case details, description..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
+    </div>
+
+    <!-- 2. CASE NUMBER (Explicit match string field) -->
+    <div class="search-wrapper-input" style="width: 160px; margin-bottom: 0;">
+        <input type="text" name="case_number" id="caseNumberInput" class="form-field-input" placeholder="Case Number..." value="<?php echo htmlspecialchars($_GET['case_number'] ?? ''); ?>" style="margin-bottom: 0;">
     </div>
     
-    <select id="filterEntity" onchange="filterCasesMatrix()" class="dropdown-selector-filter" style="max-width: 200px; margin-bottom: 0;">
-        <option value="">🏢 All Corporate Entities</option>
-        <?php foreach ($companies as $c): ?>
-            <option value="<?php echo htmlspecialchars($c['company_name']); ?>"><?php echo htmlspecialchars($c['company_name']); ?></option>
-        <?php endforeach; ?>
-    </select>
+    <!-- 3. COURT ROOM Selector -->
+    <div style="margin-bottom: 0;">
+        <select name="court" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; font-size: 13px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+            <option value="">⚖ Court Room (All)</option>
+            <?php foreach ($courts as $cr): ?>
+                <option value="<?php echo $cr['id']; ?>" <?php echo (($_GET['court'] ?? '') == $cr['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($cr['room_name']); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
 
-    <select id="filterCourt" onchange="filterCasesMatrix()" class="dropdown-selector-filter" style="max-width: 160px; margin-bottom: 0;">
-        <option value="">All Courts</option>
-        <?php foreach ($courts as $cr): ?>
-            <option value="<?php echo htmlspecialchars($cr['room_name']); ?>"><?php echo htmlspecialchars($cr['room_name']); ?></option>
-        <?php endforeach; ?>
-    </select>
+    <!-- 4. ASSIGNED LEGAL TEAM Selector -->
+    <div style="margin-bottom: 0;">
+        <select name="officer" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; font-size: 13px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+            <option value="">💼 Assigned Legal Team</option>
+            <?php foreach ($officers as $o): ?>
+                <option value="<?php echo $o['id']; ?>" <?php echo (($_GET['officer'] ?? '') == $o['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($o['full_name']); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
 
-    <select id="filterOfficer" onchange="filterCasesMatrix()" class="dropdown-selector-filter" style="max-width: 180px; margin-bottom: 0;">
-        <option value="">Assigned Officer</option>
-        <?php foreach ($officers as $o): ?>
-            <option value="<?php echo htmlspecialchars($o['full_name']); ?>"><?php echo htmlspecialchars($o['full_name']); ?></option>
-        <?php endforeach; ?>
-    </select>
-</div>
+    <!-- 5. STATUS STAGE Selector -->
+    <div style="margin-bottom: 0;">
+        <select name="status" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; font-size: 13px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+            <option value="">📊 Status Stage</option>
+            <option value="Filing Stage" <?php echo (($_GET['status'] ?? '') === 'Filing Stage') ? 'selected' : ''; ?>>Filing Stage</option>
+            <option value="In Progress" <?php echo (($_GET['status'] ?? '') === 'In Progress') ? 'selected' : ''; ?>>In Progress</option>
+            <option value="Settled" <?php echo (($_GET['status'] ?? '') === 'Settled') ? 'selected' : ''; ?>>Settled</option>
+            <option value="Appealed" <?php echo (($_GET['status'] ?? '') === 'Appealed') ? 'selected' : ''; ?>>Appealed</option>
+        </select>
+    </div>
+
+    <!-- Optional Subsidiary Entity Filter to keep tracking active -->
+    <input type="hidden" name="entity" value="<?php echo htmlspecialchars($_GET['entity'] ?? ''); ?>">
+
+    <!-- 6. Wipe Clear Controls Button -->
+    <?php if (!empty($_GET['court']) || !empty($_GET['officer']) || !empty($_GET['case_number']) || !empty($_GET['status']) || !empty($_GET['search'])): ?>
+        <a href="index.php?entity=<?php echo urlencode($_GET['entity'] ?? ''); ?>" class="btn btn-secondary" style="padding: 8px 14px; font-size: 13px; text-decoration: none; border-radius: 6px; background: #f1f5f9; color: #475569; font-weight: 600;">Clear</a>
+    <?php endif; ?>
+</form>
 
 <div class="data-ledger-card">
     <table class="data-ledger-table" id="courtCasesLedgerGrid">
@@ -455,11 +479,25 @@ function removeFile(id, index, module) { // Ensure 'module' is passed here
 }
 
     // 1. Initialize pagination controls
-    initPagination('court_cases', 'data-body-court-cases');
-
-    // 2. Load the first page immediately on document ready
+// 1. Initialize and render pagination controls safely on runtime load
     document.addEventListener("DOMContentLoaded", function() {
-        paginate('court_cases', 'data-body-court-cases', 1); 
+        // Initialize dynamic pagination engine layers
+        initPagination('court_cases', 'data-body-court-cases');
+        paginate('court_cases', 'data-body-court-cases', 1);
+
+        // Re-attach listeners to both interactive text search boxes
+        const searchInput = document.getElementById('tableSearchInput');
+        const caseNumInput = document.getElementById('caseNumberInput');
+        
+        const submitFormOnEnter = function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.form.submit();
+            }
+        };
+
+        if (searchInput)  searchInput.addEventListener('keypress', submitFormOnEnter);
+        if (caseNumInput) caseNumInput.addEventListener('keypress', submitFormOnEnter);
     });
 </script>
 

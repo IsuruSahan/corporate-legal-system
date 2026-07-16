@@ -1,75 +1,112 @@
 // A global state object to keep track of pages for different tables
+// A global state object to keep track of pages for different tables
 const paginationState = {};
 
 function initPagination(table, containerId) {
-    // Inject controls into the DOM
-    document.write(`
-        <div style="text-align: center; margin: 20px;">
-            <button onclick="paginate('${table}', '${containerId}', -1)" class="btn btn-secondary">Prev</button>
-            <span id="page-${containerId}" style="margin: 0 15px;">Page 1</span>
-            <button onclick="paginate('${table}', '${containerId}', 1)" class="btn btn-secondary">Next</button>
-        </div>
-    `);
+    // Locate target table body container node
+    const tbody = document.getElementById(containerId);
+    if (!tbody) return;
+    
+    // Safely look up the outer card wrapper layout element structure
+    const parentCard = tbody.closest('.data-ledger-card');
+    if (!parentCard) return;
+
+    // Create the controls container cleanly
+    const controlsWrapper = document.createElement('div');
+    controlsWrapper.style.cssText = "text-align: center; margin: 20px;";
+    controlsWrapper.innerHTML = `
+        <button onclick="paginate('${table}', '${containerId}', -1)" class="btn btn-secondary">Prev</button>
+        <span id="page-${containerId}" style="margin: 0 15px; font-weight: 600;">Page 1</span>
+        <button onclick="paginate('${table}', '${containerId}', 1)" class="btn btn-secondary">Next</button>
+    `;
+    
+    // Append it safely below the layout table grid
+    parentCard.appendChild(controlsWrapper);
 }
 
-// Change the function to accept 'page' instead of 'dir'
-// Change the function to accept 'page' instead of 'dir'
 function paginate(table, containerId, pageNumber) {
     // 1. Calculate the target page number cleanly
     let newPage;
     if (typeof pageNumber === 'number' && Math.abs(pageNumber) === 1 && !paginationState[containerId]) {
-        // Handle initial call
         newPage = 1;
     } else if (pageNumber === 1 || pageNumber === -1) {
-        // Handle button clicks
         newPage = (paginationState[containerId] || 1) + pageNumber;
     } else {
-        // Handle explicit page jump (e.g., loading page 1)
         newPage = pageNumber;
     }
 
     if (newPage < 1) return;
 
-   // --- READ ALL ACTIVE URL BAR FILTERS ---
+    // --- READ ALL ACTIVE URL BAR FILTERS ---
     const urlParams = new URLSearchParams(window.location.search);
-    const activeEntityFilter = urlParams.get('entity') || '';
+    
+    // Core parameters shared across multiple templates
+    const activeEntityFilter   = urlParams.get('entity') || '';
+    const activeOfficerFilter  = urlParams.get('officer') || '';
+    const activeStatusFilter   = urlParams.get('status') || '';
+    const activeSearchFilter   = urlParams.get('search') || '';
+    
+    // Agreement specific parameters
     const activeCategoryFilter = urlParams.get('category') || '';
-    const activeOfficerFilter = urlParams.get('officer') || '';
-    const activeCabinetFilter = urlParams.get('cabinet') || '';
-    const activeStatusFilter = urlParams.get('status') || '';
-    const activeSearchFilter = urlParams.get('search') || '';
+    const activeCabinetFilter  = urlParams.get('cabinet') || '';
+    
+    // Litigation (Court Cases) specific parameters
+    const activeCourtFilter    = urlParams.get('court') || '';
+    const activeCaseNumFilter  = urlParams.get('case_number') || '';
 
     const fd = new FormData();
     fd.append('action', 'fetch_paginated_data');
     fd.append('table', table);
     fd.append('page', newPage);
 
-    // Append all dynamic filter inputs to payload
-    if (activeEntityFilter) fd.append('group_company_id', activeEntityFilter);
+    // 1. Map global entity and structural filters
+    if (activeEntityFilter)   fd.append('group_company_id', activeEntityFilter);
+    if (activeOfficerFilter)  fd.append('assigned_officer_id', activeOfficerFilter);
+    if (activeSearchFilter)   fd.append('search_term', activeSearchFilter);
+
+    // 2. Map Agreement modular payload variants
     if (activeCategoryFilter) fd.append('category_id', activeCategoryFilter);
-    if (activeOfficerFilter) fd.append('assigned_officer_id', activeOfficerFilter);
-    if (activeCabinetFilter) fd.append('cabinet_id', activeCabinetFilter);
-    if (activeStatusFilter) fd.append('initial_status', activeStatusFilter);
-    if (activeSearchFilter) fd.append('search_term', activeSearchFilter);
+    if (activeCabinetFilter)  fd.append('cabinet_id', activeCabinetFilter);
+
+    // 3. Map Litigation context variables accurately depending on routing paths
+    if (activeCourtFilter)    fd.append('court_id', activeCourtFilter);
+    if (activeCaseNumFilter)  fd.append('case_number', activeCaseNumFilter);
+
+    // 4. Status mapping logic across distinct tables
+    if (activeStatusFilter) {
+        if (table === 'court_cases') {
+            fd.append('case_status', activeStatusFilter);
+        } else {
+            fd.append('initial_status', activeStatusFilter);
+        }
+    }
 
     fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(res => {
+        const body = document.getElementById(containerId);
+        
         if (res.success && res.data.length > 0) {
+            // Update structural page states only when valid rows return
             paginationState[containerId] = newPage; 
             document.getElementById(`page-${containerId}`).textContent = `Page ${newPage}`;
             
-            const body = document.getElementById(containerId);
             body.innerHTML = ''; 
             res.data.forEach(row => {
                 body.innerHTML += renderRow(table, row);
             });
         } else {
             alert("No more records to display.");
+            // If the initial page request (page 1) comes back completely empty due to strict filtering filters
+            if (newPage === 1) {
+                body.innerHTML = '<tr><td colspan="100%" style="text-align: center; padding: 20px; color: #64748b;">No matching records found.</td></tr>';
+            }
         }
     })
     .catch(err => console.error("Pagination networking processing failure:", err));
 }
+
+// [ Centralized Renderer Function Switch remains exactly as you wrote it ]
 
 
 // Centralized Renderer
