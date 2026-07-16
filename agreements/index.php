@@ -404,77 +404,37 @@ function removeFile(id, index) {
     });
 }
 
-    // 1. Initialize pagination controls
-    // 1. Initialize pagination controls
-// 1. Initialize your standard pagination controls
+// 1. Initialize your standard pagination controls grid framework safely
     initPagination('agreements', 'data-body-agreements');
 
-    // 2. CRITICAL FIX: Intercept the page load and pass the active filter to the router
+// Control workflow execution cleanly inside the browser initialization thread
     document.addEventListener("DOMContentLoaded", function() {
-        // Read the ?entity=X parameter from the browser address bar
+        // Automatically extract all query string variables from the URL bar state
         const urlParams = new URLSearchParams(window.location.search);
-        const entityFilterId = urlParams.get('entity') || '';
+        
+        // Use the global centralized pagination engine on page load instead of the missing function
+        paginate('agreements', 'data-body-agreements', 1);
 
-        // Safely execute paginate with the filter parameters attached
-        paginateAgreementsWithFilter('agreements', 'data-body-agreements', 1, entityFilterId);
+        // Bind the text search input element to submit the parent form on 'Enter' keypress
+        const searchInput = document.getElementById('tableSearchInput');
+        if (searchInput) {
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.form.submit(); // Updates the page URL with ALL selected criteria
+                }
+            });
+        }
     });
 
-    // Custom helper function that replaces the default paginate call for this filtered ledger view
-    function paginateAgreementsWithFilter(table, targetBodyId, page, entityId) {
-        const fd = new FormData();
-        fd.append('action', 'fetch_paginated_data');
-        fd.append('table', table);
-        fd.append('page', page);
-        
-        // Pass the company filter along if it exists in the URL
-        if (entityId) {
-            fd.append('group_company_id', entityId);
-        }
 
-        fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(res => {
-            if (res.success && res.data) {
-                const body = document.getElementById(targetBodyId);
-                body.innerHTML = ''; // Clear current rows
-                
-                if (res.data.length === 0) {
-                    body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color: var(--text-light);">No records match this company filter.</td></tr>';
-                    return;
-                }
 
-                // Render out only the filtered rows dynamically
-                res.data.forEach(row => {
-                    body.innerHTML += `
-                        <tr id="agreement-row-${row.id}" onclick="openDetailDrawer(${row.id})" style="cursor:pointer;">
-                            <td>
-                                <strong style="color: var(--text-dark); display:block;">${escapeHtml(row.title)}</strong>
-                                <span style="font-size:11px; color: var(--text-light);">${escapeHtml(row.company_name)} | Party B: ${escapeHtml(row.party_b)}</span>
-                            </td>
-                            <td><span class="category-pill">${escapeHtml(row.category_name)}</span></td>
-                            <td><span style="font-weight:600; color: var(--text-dark);">${escapeHtml(row.officer_name)}</span></td>
-                            <td><span class="vault-location-text">${escapeHtml(row.cabinet_location)}</span></td>
-                            <td><span style="font-family:monospace; font-weight:700;">${row.expiry_date}</span></td>
-                            <td><span class="status-badge ${row.initial_status.toLowerCase()}">${row.initial_status}</span></td>
-                            <td onclick="event.stopPropagation()">
-                                <a href="/corporate-legal-system/agreements/download.php?id=${row.id}" class="action-link-icon">📥</a>
-                            </td>
-                        </tr>`;
-                });
-            }
-        })
-        .catch(err => console.error("Filter injection error:", err));
-    }
-
-    // Standard string helper to protect text output
+    // Standard string helper to protect text output formatting values
     function escapeHtml(text) {
         if (!text) return 'None';
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
-    // 2. Load the first page immediately on document ready
-    document.addEventListener("DOMContentLoaded", function() {
-        paginate('agreements', 'data-body-agreements', 1); 
-    });
+
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

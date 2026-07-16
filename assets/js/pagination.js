@@ -183,12 +183,15 @@ function renderRow(table, r) {
             </tr>`;
         } // End audit_logs
 
-        case 'agreements': {
+case 'agreements': {
             let fileHtmlAgree = '<span class="file-link-trigger none" style="color: #ccc; font-style: italic;">None</span>';
             try {
                 let files = JSON.parse(r.file_attachment_path || '[]');
                 if (Array.isArray(files) && files.length > 0) {
-                    fileHtmlAgree = files.map(path => `<a href="../${path.replace(/^\//, '')}" target="_blank" class="file-link-trigger active" style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">📁</a>`).join('');
+                    // Clean asset path trailing calculation logic maps smoothly
+                    fileHtmlAgree = files.map(path => `
+                        <a href="..${path}" target="_blank" class="file-link-trigger active" style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">📁</a>
+                    `).join('');
                 }
             } catch(e) { console.error("File parse error", e); }
 
