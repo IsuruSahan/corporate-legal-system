@@ -1,31 +1,32 @@
-<?php
-// 1. Initialize safe application session and state context
+﻿<?php
+/**
+ * Central AJAX router for the corporate legal system.
+ *
+ * This file accepts POST-only async requests, checks read-only access, and then
+ * dispatches each action to the matching module handler below.
+ */
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/auth.php';
 
-// Force clean JSON headers for async cross-communication
 header('Content-Type: application/json');
 
-// --- FIX: Define $action BEFORE using it ---
 $action = $_POST['action'] ?? '';
 
-// Guardrail: Enforce asynchronous POST request routing verification
+// All router calls must be asynchronous POST transactions.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid transaction vector method.']);
     exit;
 }
 
+// Viewer users may only call safe read endpoints.
 $readOnlyActions = ['fetch_paginated_data', 'get_agreement', 'get_court_case'];
-
-// 2. Now $action is defined, so this check will execute correctly
 if ($_SESSION['user_role'] === 'Viewer' && !in_array($action, $readOnlyActions)) {
     echo json_encode(['success' => false, 'message' => 'Privilege Violation: Read-Only.']);
     exit;
 }
 
-
 /**
- * HELPER UTILITY: TRANSACTION LOG COMMITTER (WITH ERROR TRACING)
+ * Write an audit trail entry for mutations routed through this file.
  */
 function recordAuditLog($pdo, $actionType, $module, $recordId, $description) {
     try {
@@ -50,17 +51,18 @@ function recordAuditLog($pdo, $actionType, $module, $recordId, $description) {
 
 switch ($action) {
     /* ==========================================================================
-       MODULE A: AGREEMENTS INDEXING & WORKSPACE OPERATIONS
+       Agreement CRUD and Attachments
        ========================================================================== */
-case 'save_agreement':
+
+    case 'save_agreement':
         try {
             $filePaths = [];
-            
+
             // 1. Handle Multiple File Uploads
             if (!empty($_FILES['agreement_files']['name'][0])) {
                 $uploadDir = '../uploads/agreements/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-                
+
                 // Loop through each uploaded file
                 foreach ($_FILES['agreement_files']['tmp_name'] as $key => $tmpName) {
                     if ($_FILES['agreement_files']['error'][$key] === UPLOAD_ERR_OK) {
@@ -79,19 +81,19 @@ case 'save_agreement':
 
             // 3. Insert into database
             $stmt = $pdo->prepare("INSERT INTO agreements (
-                group_company_id, title, party_b, assigned_officer_id, 
-                category_id, physical_ref_no, cabinet_id, effective_date, 
-                expiry_date, initial_status, internal_comments, 
+                group_company_id, title, party_b, assigned_officer_id,
+                category_id, physical_ref_no, cabinet_id, effective_date,
+                expiry_date, initial_status, internal_comments,
                 pa_ref_number, ecf_ref_number, file_attachment_path
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            
+
             $stmt->execute([
                 $_POST['group_company_id'], $_POST['title'], $_POST['party_b'], $_POST['assigned_officer_id'],
                 $_POST['category_id'], $_POST['physical_ref_no'], $_POST['cabinet_id'], $_POST['effective_date'],
-                $_POST['expiry_date'], $_POST['initial_status'], $_POST['internal_comments'], 
+                $_POST['expiry_date'], $_POST['initial_status'], $_POST['internal_comments'],
                 $_POST['pa_ref_number'], $_POST['ecf_ref_number'], $jsonFilePaths
             ]);
-            
+
             $newId = $pdo->lastInsertId();
             recordAuditLog($pdo, 'INSERT', 'Agreements', $newId, "Created agreement: " . $_POST['title']);
 
@@ -106,7 +108,7 @@ case 'save_agreement':
             $stmt = $pdo->prepare("SELECT * FROM agreements WHERE id = ?");
             $stmt->execute([$_POST['id']]);
             $record = $stmt->fetch();
-            
+
             if ($record) {
                 echo json_encode(['success' => true, 'data' => $record]);
             } else {
@@ -117,82 +119,82 @@ case 'save_agreement':
         }
         break;
 
-case 'update_agreement':
-    try {
-        $id = $_POST['id'];
-        
-        // 1. Get the CURRENT files from the database first
-        $stmt = $pdo->prepare("SELECT file_attachment_path FROM agreements WHERE id = ?");
-        $stmt->execute([$id]);
-        $existingPaths = json_decode($stmt->fetchColumn(), true) ?: [];
+    case 'update_agreement':
+        try {
+            $id = $_POST['id'];
 
-        // 2. Handle new uploads and APPEND to the array
-        if (!empty($_FILES['agreement_files']['name'][0])) {
-            $uploadDir = '../uploads/agreements/';
-            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+            // 1. Get the CURRENT files from the database first
+            $stmt = $pdo->prepare("SELECT file_attachment_path FROM agreements WHERE id = ?");
+            $stmt->execute([$id]);
+            $existingPaths = json_decode($stmt->fetchColumn(), true) ?: [];
 
-            foreach ($_FILES['agreement_files']['tmp_name'] as $key => $tmpName) {
-                if ($_FILES['agreement_files']['error'][$key] === UPLOAD_ERR_OK) {
-                    $fileName = time() . '_' . basename($_FILES['agreement_files']['name'][$key]);
-                    if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
-                        $existingPaths[] = '/uploads/agreements/' . $fileName; // APPENDING
+            // 2. Handle new uploads and APPEND to the array
+            if (!empty($_FILES['agreement_files']['name'][0])) {
+                $uploadDir = '../uploads/agreements/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+
+                foreach ($_FILES['agreement_files']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['agreement_files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $fileName = time() . '_' . basename($_FILES['agreement_files']['name'][$key]);
+                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+                            $existingPaths[] = '/uploads/agreements/' . $fileName; // APPENDING
+                        }
                     }
                 }
             }
+
+            // 3. Update DB with the MERGED array
+            $stmt = $pdo->prepare("UPDATE agreements SET title=?, group_company_id=?, party_b=?, category_id=?,
+                                   assigned_officer_id=?, physical_ref_no=?, cabinet_id=?, effective_date=?,
+                                   expiry_date=?, initial_status=?, internal_comments=?, pa_ref_number=?,
+                                   ecf_ref_number=?, file_attachment_path=? WHERE id=?");
+
+            $stmt->execute([
+                $_POST['title'], $_POST['group_company_id'], $_POST['party_b'], $_POST['category_id'],
+                $_POST['assigned_officer_id'], $_POST['physical_ref_no'], $_POST['cabinet_id'],
+                $_POST['effective_date'], $_POST['expiry_date'], $_POST['initial_status'],
+                $_POST['internal_comments'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'],
+                json_encode($existingPaths), $id // Saving the full merged JSON
+            ]);
+
+            recordAuditLog($pdo, 'UPDATE', 'Agreements', $id, "Updated agreement details and revisions for: " . $_POST['title']);
+
+            echo json_encode(['success' => true, 'message' => 'Files updated successfully.']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
+        break;
 
-        // 3. Update DB with the MERGED array
-        $stmt = $pdo->prepare("UPDATE agreements SET title=?, group_company_id=?, party_b=?, category_id=?, 
-                               assigned_officer_id=?, physical_ref_no=?, cabinet_id=?, effective_date=?, 
-                               expiry_date=?, initial_status=?, internal_comments=?, pa_ref_number=?, 
-                               ecf_ref_number=?, file_attachment_path=? WHERE id=?");
-        
-        $stmt->execute([
-            $_POST['title'], $_POST['group_company_id'], $_POST['party_b'], $_POST['category_id'],
-            $_POST['assigned_officer_id'], $_POST['physical_ref_no'], $_POST['cabinet_id'], 
-            $_POST['effective_date'], $_POST['expiry_date'], $_POST['initial_status'], 
-            $_POST['internal_comments'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'], 
-            json_encode($existingPaths), $id // Saving the full merged JSON
-        ]);
+    case 'remove_file':
+        try {
+            $id = $_POST['id'];
+            $indexToRemove = (int)$_POST['file_index'];
 
-recordAuditLog($pdo, 'UPDATE', 'Agreements', $id, "Updated agreement details and revisions for: " . $_POST['title']);
+            // 1. Fetch current array
+            $stmt = $pdo->prepare("SELECT file_attachment_path FROM agreements WHERE id = ?");
+            $stmt->execute([$id]);
+            $files = json_decode($stmt->fetchColumn(), true) ?: [];
 
-        echo json_encode(['success' => true, 'message' => 'Files updated successfully.']);
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-    break;
+            // 2. Validate and delete physical file
+            if (isset($files[$indexToRemove])) {
+                $physicalPath = '..' . $files[$indexToRemove];
+                if (file_exists($physicalPath)) {
+                    unlink($physicalPath);
+                }
 
-case 'remove_file':
-    try {
-        $id = $_POST['id'];
-        $indexToRemove = (int)$_POST['file_index'];
+                // 3. Remove from array and update DB
+                array_splice($files, $indexToRemove, 1);
+                $stmt = $pdo->prepare("UPDATE agreements SET file_attachment_path = ? WHERE id = ?");
+                $stmt->execute([json_encode($files), $id]);
 
-        // 1. Fetch current array
-        $stmt = $pdo->prepare("SELECT file_attachment_path FROM agreements WHERE id = ?");
-        $stmt->execute([$id]);
-        $files = json_decode($stmt->fetchColumn(), true) ?: [];
-
-        // 2. Validate and delete physical file
-        if (isset($files[$indexToRemove])) {
-            $physicalPath = '..' . $files[$indexToRemove];
-            if (file_exists($physicalPath)) {
-                unlink($physicalPath);
+                echo json_encode(['success' => true]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'File not found.']);
             }
-
-            // 3. Remove from array and update DB
-            array_splice($files, $indexToRemove, 1);
-            $stmt = $pdo->prepare("UPDATE agreements SET file_attachment_path = ? WHERE id = ?");
-            $stmt->execute([json_encode($files), $id]);
-            
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'File not found.']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-    break;
+        break;
 
     case 'delete_agreement':
         try {
@@ -203,7 +205,7 @@ case 'remove_file':
 
             $stmt = $pdo->prepare("DELETE FROM agreements WHERE id = ?");
             $stmt->execute([$_POST['id']]);
-            
+
             recordAuditLog($pdo, 'DELETE', 'Agreements', $_POST['id'], "Permanently deleted agreement archival record item: " . $title);
 
             echo json_encode(['success' => true, 'message' => 'Agreement permanently deleted from the secure vault.']);
@@ -212,24 +214,23 @@ case 'remove_file':
         }
         break;
 
-
-
     /* ==========================================================================
-       MODULE B: LITIGATION WORKSPACE & DRAWER ACTIONS
+       Court Case CRUD and Attachments
        ========================================================================== */
-case 'save_court_case':
-    if (empty($_FILES)) {
-        echo json_encode(['success' => false, 'message' => 'No files detected. Check form enctype.']);
-        break;
-    }
+
+    case 'save_court_case':
+        if (empty($_FILES)) {
+            echo json_encode(['success' => false, 'message' => 'No files detected. Check form enctype.']);
+            break;
+        }
         try {
             $filePaths = [];
-            
+
             // 1. Process multiple file uploads
             if (!empty($_FILES['court_case_files']['name'][0])) {
                 $uploadDir = '../uploads/court_cases/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-                
+
                 foreach ($_FILES['court_case_files']['tmp_name'] as $key => $tmpName) {
                     if ($_FILES['court_case_files']['error'][$key] === UPLOAD_ERR_OK) {
                         $fileName = time() . '_' . basename($_FILES['court_case_files']['name'][$key]);
@@ -245,19 +246,19 @@ case 'save_court_case':
 
             // 3. Insert record with file_attachment_path
             $stmt = $pdo->prepare("INSERT INTO court_cases (
-                group_company_id, case_number, case_parties, assigned_officer_id, 
-                court_id, counsel_name, instructing_attorney, case_description, 
-                next_hearing_date, next_step_date, next_step_description, 
-                cabinet_id, linked_agreement_id, internal_comments, 
+                group_company_id, case_number, case_parties, assigned_officer_id,
+                court_id, counsel_name, instructing_attorney, case_description,
+                next_hearing_date, next_step_date, next_step_description,
+                cabinet_id, linked_agreement_id, internal_comments,
                 pa_ref_number, ecf_ref_number, case_status, file_attachment_path
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            
+
             $stmt->execute([
                 $_POST['group_company_id'], $_POST['case_number'], $_POST['case_parties'], $_POST['assigned_officer_id'],
                 $_POST['court_id'], $_POST['counsel_name'], $_POST['instructing_attorney'], $_POST['case_description'],
                 !empty($_POST['next_hearing_date']) ? $_POST['next_hearing_date'] : null,
                 !empty($_POST['next_step_date']) ? $_POST['next_step_date'] : null,
-                $_POST['next_step_description'], $_POST['cabinet_id'], 
+                $_POST['next_step_description'], $_POST['cabinet_id'],
                 !empty($_POST['linked_agreement_id']) ? $_POST['linked_agreement_id'] : null,
                 $_POST['internal_comments'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'],
                 !empty($_POST['case_status']) ? $_POST['case_status'] : 'Filing Stage',
@@ -278,7 +279,7 @@ case 'save_court_case':
             $stmt = $pdo->prepare("SELECT * FROM court_cases WHERE id = ?");
             $stmt->execute([$_POST['id']]);
             $record = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if ($record) {
                 echo json_encode(['success' => true, 'data' => $record]);
             } else {
@@ -289,7 +290,7 @@ case 'save_court_case':
         }
         break;
 
-case 'update_court_case':
+    case 'update_court_case':
         try {
             $id = $_POST['id'];
 
@@ -314,19 +315,19 @@ case 'update_court_case':
             }
 
             // 3. Update the registry with metadata AND the new JSON file list
-            $stmt = $pdo->prepare("UPDATE court_cases SET 
-                case_parties = ?, group_company_id = ?, case_number = ?, court_id = ?, 
-                assigned_officer_id = ?, counsel_name = ?, instructing_attorney = ?, 
-                case_description = ?, next_hearing_date = ?, next_step_date = ?, 
-                next_step_description = ?, cabinet_id = ?, linked_agreement_id = ?, 
+            $stmt = $pdo->prepare("UPDATE court_cases SET
+                case_parties = ?, group_company_id = ?, case_number = ?, court_id = ?,
+                assigned_officer_id = ?, counsel_name = ?, instructing_attorney = ?,
+                case_description = ?, next_hearing_date = ?, next_step_date = ?,
+                next_step_description = ?, cabinet_id = ?, linked_agreement_id = ?,
                 pa_ref_number = ?, ecf_ref_number = ?, case_status = ?, internal_comments = ?,
-                file_attachment_path = ? 
+                file_attachment_path = ?
                 WHERE id = ?");
-            
+
             $stmt->execute([
                 $_POST['case_parties'], $_POST['group_company_id'], $_POST['case_number'], $_POST['court_id'],
                 $_POST['assigned_officer_id'], $_POST['counsel_name'], $_POST['instructing_attorney'],
-                $_POST['case_description'], 
+                $_POST['case_description'],
                 !empty($_POST['next_hearing_date']) ? $_POST['next_hearing_date'] : null,
                 !empty($_POST['next_step_date']) ? $_POST['next_step_date'] : null,
                 $_POST['next_step_description'], $_POST['cabinet_id'],
@@ -343,6 +344,40 @@ case 'update_court_case':
         }
         break;
 
+    case 'remove_court_file':
+        try {
+            $id = $_POST['id'];
+            $indexToRemove = (int)$_POST['file_index'];
+            $targetTable = 'court_cases';
+
+            $stmt = $pdo->prepare("SELECT file_attachment_path FROM {$targetTable} WHERE id = ?");
+            $stmt->execute([$id]);
+            $files = json_decode($stmt->fetchColumn(), true) ?: [];
+
+            if (isset($files[$indexToRemove])) {
+                $relativePath = ltrim($files[$indexToRemove], '/');
+                $baseDir = realpath(__DIR__ . '/../');
+                $fullPath = $baseDir . DIRECTORY_SEPARATOR . $relativePath;
+
+                // 1. Delete physical file
+                if (file_exists($fullPath)) {
+                    unlink($fullPath);
+                }
+
+                // 2. CRITICAL: Remove from array AND Update Database
+                array_splice($files, $indexToRemove, 1);
+                $stmt = $pdo->prepare("UPDATE {$targetTable} SET file_attachment_path = ? WHERE id = ?");
+                $stmt->execute([json_encode($files), $id]);
+
+                echo json_encode(['success' => true]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Index error.']);
+            }
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
     case 'delete_court_case':
         try {
             $info = $pdo->prepare("SELECT case_number FROM court_cases WHERE id = ?");
@@ -351,7 +386,7 @@ case 'update_court_case':
 
             $stmt = $pdo->prepare("DELETE FROM court_cases WHERE id = ?");
             $stmt->execute([$_POST['id']]);
-            
+
             recordAuditLog($pdo, 'DELETE', 'Court Cases', $_POST['id'], "Permanently cleared litigation profile index: " . $caseNum);
 
             echo json_encode(['success' => true, 'message' => 'Litigation profile permanently deleted from the registry.']);
@@ -360,43 +395,145 @@ case 'update_court_case':
         }
         break;
 
-case 'remove_court_file':
-    try {
-        $id = $_POST['id'];
-        $indexToRemove = (int)$_POST['file_index'];
-        $targetTable = 'court_cases';
+    /* ==========================================================================
+       Payment CRUD and Attachments
+       ========================================================================== */
 
-        $stmt = $pdo->prepare("SELECT file_attachment_path FROM {$targetTable} WHERE id = ?");
-        $stmt->execute([$id]);
-        $files = json_decode($stmt->fetchColumn(), true) ?: [];
+    case 'save_payment':
+        try {
+            $filePaths = [];
 
-        if (isset($files[$indexToRemove])) {
-            $relativePath = ltrim($files[$indexToRemove], '/');
-            $baseDir = realpath(__DIR__ . '/../');
-            $fullPath = $baseDir . DIRECTORY_SEPARATOR . $relativePath;
+            // 1. Process multiple file uploads
+            if (!empty($_FILES['payment_files']['name'][0])) {
+                $uploadDir = '../uploads/payments/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
-            // 1. Delete physical file
-            if (file_exists($fullPath)) {
-                unlink($fullPath);
+                foreach ($_FILES['payment_files']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['payment_files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $fileName = time() . '_' . basename($_FILES['payment_files']['name'][$key]);
+                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+                            $filePaths[] = '/uploads/payments/' . $fileName;
+                        }
+                    }
+                }
             }
 
-            // 2. CRITICAL: Remove from array AND Update Database
-            array_splice($files, $indexToRemove, 1);
-            $stmt = $pdo->prepare("UPDATE {$targetTable} SET file_attachment_path = ? WHERE id = ?");
-            $stmt->execute([json_encode($files), $id]);
-            
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Index error.']);
+            // 2. Prepare JSON string
+            $jsonFilePaths = !empty($filePaths) ? json_encode($filePaths) : null;
+
+            // 3. Insert record into payments table
+            $stmt = $pdo->prepare("INSERT INTO payments (
+                group_company_id, description, currency, amount,
+                source_type, linked_source_id, due_date, payment_date,
+                payment_comment, pa_ref_number, ecf_ref_number, file_attachment_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+            $stmt->execute([
+                $_POST['group_company_id'],
+                $_POST['description'],
+                $_POST['currency'],
+                $_POST['amount'],
+                $_POST['source_type'],
+                $_POST['linked_source_id'],
+                $_POST['due_date'],
+                !empty($_POST['payment_date']) ? $_POST['payment_date'] : null,
+                $_POST['payment_comment'],
+                $_POST['pa_ref_number'],
+                $_POST['ecf_ref_number'],
+                $jsonFilePaths
+            ]);
+
+            $newId = $pdo->lastInsertId();
+            recordAuditLog($pdo, 'INSERT', 'Payments', $newId, "Logged new payment milestone: " . $_POST['description']);
+
+            echo json_encode(['success' => true, 'message' => 'Payment milestone successfully committed with attachments.']);
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Database operation error: ' . $e->getMessage()]);
         }
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-    break;
+        break;
+
+    case 'get_payment':
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM payments WHERE id = ?");
+            $stmt->execute([$_POST['id']]);
+            $record = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($record) {
+                echo json_encode(['success' => true, 'data' => $record]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Payment milestone record not found.']);
+            }
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+        }
+        break;
+
+    case 'update_payment':
+        try {
+            $id = $_POST['id'];
+
+            // 1. Fetch current file paths
+            $stmt = $pdo->prepare("SELECT file_attachment_path FROM payments WHERE id = ?");
+            $stmt->execute([$id]);
+            $existingPaths = json_decode($stmt->fetchColumn(), true) ?: [];
+
+            // 2. Handle new uploads
+            if (!empty($_FILES['payment_files']['name'][0])) {
+                $uploadDir = '../uploads/payments/';
+                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+
+                foreach ($_FILES['payment_files']['tmp_name'] as $key => $tmpName) {
+                    if ($_FILES['payment_files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $fileName = time() . '_' . basename($_FILES['payment_files']['name'][$key]);
+                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
+                            $existingPaths[] = '/uploads/payments/' . $fileName;
+                        }
+                    }
+                }
+            }
+
+            // 3. Update record
+            $stmt = $pdo->prepare("UPDATE payments SET
+                description = ?, group_company_id = ?, currency = ?, amount = ?,
+                source_type = ?, linked_source_id = ?, due_date = ?, payment_date = ?,
+                payment_comment = ?, pa_ref_number = ?, ecf_ref_number = ?, file_attachment_path = ?
+                WHERE id = ?");
+
+            $stmt->execute([
+                $_POST['description'], $_POST['group_company_id'], $_POST['currency'], $_POST['amount'],
+                $_POST['source_type'], $_POST['linked_source_id'], $_POST['due_date'],
+                !empty($_POST['payment_date']) ? $_POST['payment_date'] : null,
+                $_POST['payment_comment'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'],
+                json_encode($existingPaths), $id
+            ]);
+
+            recordAuditLog($pdo, 'UPDATE', 'Payments', $id, "Updated payment milestone: " . $_POST['description']);
+            echo json_encode(['success' => true, 'message' => 'Payment milestone updated successfully.']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'delete_payment':
+        try {
+            $info = $pdo->prepare("SELECT description FROM payments WHERE id = ?");
+            $info->execute([$_POST['id']]);
+            $desc = $info->fetchColumn() ?: 'Unknown Payment';
+
+            $stmt = $pdo->prepare("DELETE FROM payments WHERE id = ?");
+            $stmt->execute([$_POST['id']]);
+
+            recordAuditLog($pdo, 'DELETE', 'Payments', $_POST['id'], "Permanently deleted payment milestone: " . $desc);
+            echo json_encode(['success' => true, 'message' => 'Payment milestone permanently removed.']);
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Deletion failed: ' . $e->getMessage()]);
+        }
+        break;
 
     /* ==========================================================================
-       MODULE C: ADMIN CUSTOM USER CREATION (FRAME-5 DESIGN)
+       Admin User Management
        ========================================================================== */
+
     case 'ajax_create_user':
         if ($_SESSION['user_role'] !== 'Admin') {
             echo json_encode(['success' => false, 'message' => 'Access Denied: User creation requires administrative clearance bounds.']);
@@ -427,9 +564,6 @@ case 'remove_court_file':
         }
         break;
 
-    /* ==========================================================================
-       MODULE D: ADMIN PROFILE REVOLVING / DELETION PROCESS
-       ========================================================================== */
     case 'ajax_delete_user':
         if ($_SESSION['user_role'] !== 'Admin') {
             echo json_encode(['success' => false, 'message' => 'Access Denied: Destruction token parameters require complete Admin privilege mapping.']);
@@ -449,7 +583,7 @@ case 'remove_court_file':
 
             $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
             $stmt->execute([$id]);
-            
+
             recordAuditLog($pdo, 'DELETE', 'Users', $id, "Revoked account identity tokens and access privileges for employee user: " . $uName);
 
             echo json_encode(['success' => true, 'message' => 'User system permissions successfully revoked from the workspace directory.']);
@@ -459,8 +593,9 @@ case 'remove_court_file':
         break;
 
     /* ==========================================================================
-       MODULE E: ADMINISTRATIVE LOOKUP MASTER DROPDOWNS INITIALIZATION
+       Admin Lookup Data
        ========================================================================== */
+
     case 'add_lookup':
         if ($_SESSION['user_role'] !== 'Admin') {
             echo json_encode(['success' => false, 'message' => 'Privilege violation: Administrative access required.']);
@@ -471,12 +606,12 @@ case 'remove_court_file':
         $value = trim($_POST['value'] ?? '');
 
         $allowed_tables = [
-            'court_rooms'          => 'room_name', 
-            'agreement_categories' => 'category_name', 
-            'archive_cabinets'     => 'cabinet_location', 
+            'court_rooms'          => 'room_name',
+            'agreement_categories' => 'category_name',
+            'archive_cabinets'     => 'cabinet_location',
             'group_companies'      => 'company_name'
         ];
-        
+
         if (!array_key_exists($table, $allowed_tables) || empty($value)) {
             echo json_encode(['success' => false, 'message' => 'Invalid configuration tracking request properties.']);
             exit;
@@ -486,7 +621,7 @@ case 'remove_court_file':
             $column = $allowed_tables[$table];
             $stmt = $pdo->prepare("INSERT INTO {$table} ({$column}) VALUES (?)");
             $stmt->execute([$value]);
-            
+
             recordAuditLog($pdo, 'INSERT', 'System Settings Dropdowns', 0, "Injected dynamic dropdown value attribute inside [{$table}] lookup matrix: {$value}");
 
             echo json_encode(['success' => true, 'message' => 'Dropdown mapping option indexed successfully.']);
@@ -495,319 +630,188 @@ case 'remove_court_file':
         }
         break;
 
-            /* ==========================================================================
-       save payment milestone with attachments
+    /* ==========================================================================
+       Shared Listing and Archive Feeds
        ========================================================================== */
 
-        case 'save_payment':
-        try {
-            $filePaths = [];
-            
-            // 1. Process multiple file uploads
-            if (!empty($_FILES['payment_files']['name'][0])) {
-                $uploadDir = '../uploads/payments/';
-                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-                
-                foreach ($_FILES['payment_files']['tmp_name'] as $key => $tmpName) {
-                    if ($_FILES['payment_files']['error'][$key] === UPLOAD_ERR_OK) {
-                        $fileName = time() . '_' . basename($_FILES['payment_files']['name'][$key]);
-                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
-                            $filePaths[] = '/uploads/payments/' . $fileName;
-                        }
-                    }
-                }
+    case 'fetch_paginated_data':
+        $table = $_POST['table'] ?? '';
+        $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
+        $limit = 8;
+        $offset = ($page - 1) * $limit;
+
+        // Capture all incoming dynamic filter variables safely in a single global assignment zone
+        $companyId    = !empty($_POST['group_company_id']) ? intval($_POST['group_company_id']) : null;
+        $categoryId   = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
+        $officerId    = !empty($_POST['assigned_officer_id']) ? intval($_POST['assigned_officer_id']) : null;
+        $cabinetId    = !empty($_POST['cabinet_id']) ? intval($_POST['cabinet_id']) : null;
+        $statusFilter = !empty($_POST['initial_status']) ? trim($_POST['initial_status']) : null;
+        $searchTerm   = !empty($_POST['search_term']) ? trim($_POST['search_term']) : null;
+
+        // Extract domain-specific litigation parameters cleanly without scope shadowing
+        $courtId      = !empty($_POST['court_id']) ? intval($_POST['court_id']) : null;
+        $caseNoFilter = !empty($_POST['case_number']) ? trim($_POST['case_number']) : null;
+        $caseStatus   = !empty($_POST['case_status']) ? trim($_POST['case_status']) : null;
+
+
+        // Extract domain-specific payment parameters cleanly
+        $paRefFilter  = !empty($_POST['pa_ref_number']) ? trim($_POST['pa_ref_number']) : null;
+        $ecfRefFilter = !empty($_POST['ecf_ref_number']) ? trim($_POST['ecf_ref_number']) : null;
+        $sourceType   = !empty($_POST['source_type']) ? trim($_POST['source_type']) : null;
+
+        // --- QUERY BUILDING ZONE ---
+        if ($table === 'court_cases') { // FIXED: Re-added the missing condition checker here
+            $query = "SELECT cc.*, gc.company_name, cr.room_name, u.full_name AS officer_name
+                      FROM court_cases cc
+                      LEFT JOIN group_companies gc ON cc.group_company_id = gc.id
+                      LEFT JOIN court_rooms cr ON cc.court_id = cr.id
+                      LEFT JOIN users u ON cc.assigned_officer_id = u.id
+                      WHERE 1=1";
+
+            if ($companyId)   $query .= " AND cc.group_company_id = :company_id";
+            if ($courtId)     $query .= " AND cc.court_id = :court_id";
+            if ($officerId)   $query .= " AND cc.assigned_officer_id = :officer_id";
+            if ($caseNoFilter)$query .= " AND cc.case_number LIKE :case_number";
+            if ($caseStatus)  $query .= " AND cc.case_status = :case_status";
+            if ($searchTerm)  $query .= " AND (cc.case_parties LIKE :search OR cc.case_description LIKE :search)";
+
+            $query .= " ORDER BY cc.id DESC LIMIT :limit OFFSET :offset";
+        }
+        elseif ($table === 'agreements') {
+            $query = "SELECT a.*, gc.company_name, ac.category_name, u.full_name AS officer_name, cb.cabinet_location
+                      FROM agreements a
+                      LEFT JOIN group_companies gc ON a.group_company_id = gc.id
+                      LEFT JOIN agreement_categories ac ON a.category_id = ac.id
+                      LEFT JOIN users u ON a.assigned_officer_id = u.id
+                      LEFT JOIN archive_cabinets cb ON a.cabinet_id = cb.id
+                      WHERE 1=1";
+
+            if ($companyId)    $query .= " AND a.group_company_id = :company_id";
+            if ($categoryId)   $query .= " AND a.category_id = :category_id";
+            if ($officerId)    $query .= " AND a.assigned_officer_id = :officer_id";
+            if ($cabinetId)    $query .= " AND a.cabinet_id = :cabinet_id";
+            if ($statusFilter) $query .= " AND a.initial_status = :status";
+            if ($searchTerm)   $query .= " AND (a.title LIKE :search OR a.party_b LIKE :search OR a.physical_ref_no LIKE :search)";
+
+            $query .= " ORDER BY a.id DESC LIMIT :limit OFFSET :offset";
+        }
+        elseif ($table === 'payments') {
+            $query = "SELECT p.*, gc.company_name
+                      FROM payments p
+                      LEFT JOIN group_companies gc ON p.group_company_id = gc.id
+                      WHERE 1=1";
+
+            if ($companyId)    $query .= " AND p.group_company_id = :company_id";
+            if ($sourceType)   $query .= " AND p.source_type = :source_type";
+            if ($paRefFilter)  $query .= " AND p.pa_ref_number LIKE :pa_ref";
+            if ($ecfRefFilter) $query .= " AND p.ecf_ref_number LIKE :ecf_ref";
+            if ($searchTerm)   $query .= " AND p.description LIKE :search";
+
+            $query .= " ORDER BY p.id DESC LIMIT :limit OFFSET :offset";
+        }
+        elseif ($table === 'physical_archives_master') {
+            // Capture incoming string keys matching your new form element variables safely
+            $companyName = !empty($_POST['group_company_id']) ? trim($_POST['group_company_id']) : null;
+            $cabinetLoc  = !empty($_POST['cabinet_location']) ? trim($_POST['cabinet_location']) : null;
+            $moduleType  = !empty($_POST['module_type']) ? trim($_POST['module_type']) : null;
+            $fileCheck   = !empty($_POST['file_check']) ? trim($_POST['file_check']) : null;
+
+            $query = "SELECT * FROM (
+                        SELECT
+                            a.id AS original_id, cab.cabinet_location AS physical_location,
+                            a.physical_ref_no AS system_ref_no, a.title AS primary_title,
+                            gc.company_name AS group_company, a.party_b AS structural_subtext,
+                            'Agreement' AS module_type, a.file_attachment_path AS raw_file_field
+                        FROM agreements a
+                        JOIN archive_cabinets cab ON a.cabinet_id = cab.id
+                        JOIN group_companies gc ON a.group_company_id = gc.id
+
+                        UNION ALL
+
+                        SELECT
+                            cc.id AS original_id, cab.cabinet_location AS physical_location,
+                            cc.case_number AS system_ref_no, cc.case_parties AS primary_title,
+                            gc.company_name AS group_company, cc.counsel_name AS structural_subtext,
+                            'Court Case' AS module_type, cc.file_attachment_path AS raw_file_field
+                        FROM court_cases cc
+                        JOIN archive_cabinets cab ON cc.cabinet_id = cab.id
+                        JOIN group_companies gc ON cc.group_company_id = gc.id
+                      ) AS master_view WHERE 1=1";
+
+            if ($companyName) $query .= " AND group_company = :group_company";
+            if ($cabinetLoc)  $query .= " AND physical_location = :cabinet_location";
+            if ($moduleType)  $query .= " AND module_type = :module_type";
+
+            if ($fileCheck === 'scanned') {
+                $query .= " AND raw_file_field IS NOT NULL AND raw_file_field != '[]' AND raw_file_field != 'null' AND raw_file_field != ''";
+            } elseif ($fileCheck === 'pending') {
+                $query .= " AND (raw_file_field IS NULL OR raw_file_field = '[]' OR raw_file_field = 'null' OR raw_file_field = '')";
             }
 
-            // 2. Prepare JSON string
-            $jsonFilePaths = !empty($filePaths) ? json_encode($filePaths) : null;
-
-            // 3. Insert record into payments table
-            $stmt = $pdo->prepare("INSERT INTO payments (
-                group_company_id, description, currency, amount, 
-                source_type, linked_source_id, due_date, payment_date, 
-                payment_comment, pa_ref_number, ecf_ref_number, file_attachment_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            
-            $stmt->execute([
-                $_POST['group_company_id'], 
-                $_POST['description'], 
-                $_POST['currency'], 
-                $_POST['amount'], 
-                $_POST['source_type'], 
-                $_POST['linked_source_id'], 
-                $_POST['due_date'], 
-                !empty($_POST['payment_date']) ? $_POST['payment_date'] : null,
-                $_POST['payment_comment'], 
-                $_POST['pa_ref_number'], 
-                $_POST['ecf_ref_number'], 
-                $jsonFilePaths
-            ]);
-
-            $newId = $pdo->lastInsertId();
-            recordAuditLog($pdo, 'INSERT', 'Payments', $newId, "Logged new payment milestone: " . $_POST['description']);
-
-            echo json_encode(['success' => true, 'message' => 'Payment milestone successfully committed with attachments.']);
-        } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'message' => 'Database operation error: ' . $e->getMessage()]);
-        }
-        break;
-
-    default:
-        echo json_encode(['success' => false, 'message' => 'Unknown core application execution transaction path routing.']);
-        break;
-
-        case 'get_payment':
-        try {
-            $stmt = $pdo->prepare("SELECT * FROM payments WHERE id = ?");
-            $stmt->execute([$_POST['id']]);
-            $record = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($record) {
-                echo json_encode(['success' => true, 'data' => $record]);
-            } else {
-                echo json_encode(['success' => false, 'message' => 'Payment milestone record not found.']);
-            }
-        } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
-        }
-        break;
-
-    case 'update_payment':
-        try {
-            $id = $_POST['id'];
-            
-            // 1. Fetch current file paths
-            $stmt = $pdo->prepare("SELECT file_attachment_path FROM payments WHERE id = ?");
-            $stmt->execute([$id]);
-            $existingPaths = json_decode($stmt->fetchColumn(), true) ?: [];
-
-            // 2. Handle new uploads
-            if (!empty($_FILES['payment_files']['name'][0])) {
-                $uploadDir = '../uploads/payments/';
-                if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-
-                foreach ($_FILES['payment_files']['tmp_name'] as $key => $tmpName) {
-                    if ($_FILES['payment_files']['error'][$key] === UPLOAD_ERR_OK) {
-                        $fileName = time() . '_' . basename($_FILES['payment_files']['name'][$key]);
-                        if (move_uploaded_file($tmpName, $uploadDir . $fileName)) {
-                            $existingPaths[] = '/uploads/payments/' . $fileName;
-                        }
-                    }
-                }
+            if ($searchTerm) {
+                $query .= " AND (system_ref_no LIKE :search OR primary_title LIKE :search OR physical_location LIKE :search)";
             }
 
-            // 3. Update record
-            $stmt = $pdo->prepare("UPDATE payments SET 
-                description = ?, group_company_id = ?, currency = ?, amount = ?, 
-                source_type = ?, linked_source_id = ?, due_date = ?, payment_date = ?, 
-                payment_comment = ?, pa_ref_number = ?, ecf_ref_number = ?, file_attachment_path = ? 
-                WHERE id = ?");
-            
-            $stmt->execute([
-                $_POST['description'], $_POST['group_company_id'], $_POST['currency'], $_POST['amount'],
-                $_POST['source_type'], $_POST['linked_source_id'], $_POST['due_date'], 
-                !empty($_POST['payment_date']) ? $_POST['payment_date'] : null,
-                $_POST['payment_comment'], $_POST['pa_ref_number'], $_POST['ecf_ref_number'], 
-                json_encode($existingPaths), $id
-            ]);
-
-            recordAuditLog($pdo, 'UPDATE', 'Payments', $id, "Updated payment milestone: " . $_POST['description']);
-            echo json_encode(['success' => true, 'message' => 'Payment milestone updated successfully.']);
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            $query .= " ORDER BY system_ref_no DESC LIMIT :limit OFFSET :offset";
         }
-        break;
-
-    case 'delete_payment':
-        try {
-            $info = $pdo->prepare("SELECT description FROM payments WHERE id = ?");
-            $info->execute([$_POST['id']]);
-            $desc = $info->fetchColumn() ?: 'Unknown Payment';
-
-            $stmt = $pdo->prepare("DELETE FROM payments WHERE id = ?");
-            $stmt->execute([$_POST['id']]);
-            
-            recordAuditLog($pdo, 'DELETE', 'Payments', $_POST['id'], "Permanently deleted payment milestone: " . $desc);
-            echo json_encode(['success' => true, 'message' => 'Payment milestone permanently removed.']);
-        } catch (PDOException $e) {
-            echo json_encode(['success' => false, 'message' => 'Deletion failed: ' . $e->getMessage()]);
-        }
-        break;
-
-case 'fetch_paginated_data':
-    $table = $_POST['table'] ?? '';
-    $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
-    $limit = 8;
-    $offset = ($page - 1) * $limit;
-    
-    // Capture all incoming dynamic filter variables safely in a single global assignment zone
-    $companyId    = !empty($_POST['group_company_id']) ? intval($_POST['group_company_id']) : null;
-    $categoryId   = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
-    $officerId    = !empty($_POST['assigned_officer_id']) ? intval($_POST['assigned_officer_id']) : null;
-    $cabinetId    = !empty($_POST['cabinet_id']) ? intval($_POST['cabinet_id']) : null;
-    $statusFilter = !empty($_POST['initial_status']) ? trim($_POST['initial_status']) : null;
-    $searchTerm   = !empty($_POST['search_term']) ? trim($_POST['search_term']) : null;
-    
-    // Extract domain-specific litigation parameters cleanly without scope shadowing
-    $courtId      = !empty($_POST['court_id']) ? intval($_POST['court_id']) : null;
-    $caseNoFilter = !empty($_POST['case_number']) ? trim($_POST['case_number']) : null;
-    $caseStatus   = !empty($_POST['case_status']) ? trim($_POST['case_status']) : null;
-    
-
-    // Extract domain-specific payment parameters cleanly
-    $paRefFilter  = !empty($_POST['pa_ref_number']) ? trim($_POST['pa_ref_number']) : null;
-    $ecfRefFilter = !empty($_POST['ecf_ref_number']) ? trim($_POST['ecf_ref_number']) : null;
-    $sourceType   = !empty($_POST['source_type']) ? trim($_POST['source_type']) : null;
-
-    // --- QUERY BUILDING ZONE ---
-    if ($table === 'court_cases') { // FIXED: Re-added the missing condition checker here
-        $query = "SELECT cc.*, gc.company_name, cr.room_name, u.full_name AS officer_name 
-                  FROM court_cases cc
-                  LEFT JOIN group_companies gc ON cc.group_company_id = gc.id
-                  LEFT JOIN court_rooms cr ON cc.court_id = cr.id
-                  LEFT JOIN users u ON cc.assigned_officer_id = u.id
-                  WHERE 1=1";
-                  
-        if ($companyId)   $query .= " AND cc.group_company_id = :company_id";
-        if ($courtId)     $query .= " AND cc.court_id = :court_id";
-        if ($officerId)   $query .= " AND cc.assigned_officer_id = :officer_id";
-        if ($caseNoFilter)$query .= " AND cc.case_number LIKE :case_number";
-        if ($caseStatus)  $query .= " AND cc.case_status = :case_status";
-        if ($searchTerm)  $query .= " AND (cc.case_parties LIKE :search OR cc.case_description LIKE :search)";
-        
-        $query .= " ORDER BY cc.id DESC LIMIT :limit OFFSET :offset";
-    }
-    elseif ($table === 'agreements') {
-        $query = "SELECT a.*, gc.company_name, ac.category_name, u.full_name AS officer_name, cb.cabinet_location 
-                  FROM agreements a
-                  LEFT JOIN group_companies gc ON a.group_company_id = gc.id
-                  LEFT JOIN agreement_categories ac ON a.category_id = ac.id
-                  LEFT JOIN users u ON a.assigned_officer_id = u.id
-                  LEFT JOIN archive_cabinets cb ON a.cabinet_id = cb.id
-                  WHERE 1=1";
-                  
-        if ($companyId)    $query .= " AND a.group_company_id = :company_id";
-        if ($categoryId)   $query .= " AND a.category_id = :category_id";
-        if ($officerId)    $query .= " AND a.assigned_officer_id = :officer_id";
-        if ($cabinetId)    $query .= " AND a.cabinet_id = :cabinet_id";
-        if ($statusFilter) $query .= " AND a.initial_status = :status";
-        if ($searchTerm)   $query .= " AND (a.title LIKE :search OR a.party_b LIKE :search OR a.physical_ref_no LIKE :search)";
-        
-        $query .= " ORDER BY a.id DESC LIMIT :limit OFFSET :offset";
-    } 
-elseif ($table === 'payments') {
-        $query = "SELECT p.*, gc.company_name 
-                  FROM payments p
-                  LEFT JOIN group_companies gc ON p.group_company_id = gc.id
-                  WHERE 1=1";
-                  
-        if ($companyId)    $query .= " AND p.group_company_id = :company_id";
-        if ($sourceType)   $query .= " AND p.source_type = :source_type";
-        if ($paRefFilter)  $query .= " AND p.pa_ref_number LIKE :pa_ref";
-        if ($ecfRefFilter) $query .= " AND p.ecf_ref_number LIKE :ecf_ref";
-        if ($searchTerm)   $query .= " AND p.description LIKE :search";
-        
-        $query .= " ORDER BY p.id DESC LIMIT :limit OFFSET :offset";
-    }
-elseif ($table === 'physical_archives_master') {
-        // Capture incoming string keys matching your new form element variables safely
-        $companyName = !empty($_POST['group_company_id']) ? trim($_POST['group_company_id']) : null;
-        $cabinetLoc  = !empty($_POST['cabinet_location']) ? trim($_POST['cabinet_location']) : null;
-        $moduleType  = !empty($_POST['module_type']) ? trim($_POST['module_type']) : null;
-        $fileCheck   = !empty($_POST['file_check']) ? trim($_POST['file_check']) : null;
-
-        $query = "SELECT * FROM (
-                    SELECT 
-                        a.id AS original_id, cab.cabinet_location AS physical_location,
-                        a.physical_ref_no AS system_ref_no, a.title AS primary_title,
-                        gc.company_name AS group_company, a.party_b AS structural_subtext,
-                        'Agreement' AS module_type, a.file_attachment_path AS raw_file_field
-                    FROM agreements a
-                    JOIN archive_cabinets cab ON a.cabinet_id = cab.id
-                    JOIN group_companies gc ON a.group_company_id = gc.id
-                    
-                    UNION ALL
-                    
-                    SELECT 
-                        cc.id AS original_id, cab.cabinet_location AS physical_location,
-                        cc.case_number AS system_ref_no, cc.case_parties AS primary_title,
-                        gc.company_name AS group_company, cc.counsel_name AS structural_subtext,
-                        'Court Case' AS module_type, cc.file_attachment_path AS raw_file_field
-                    FROM court_cases cc
-                    JOIN archive_cabinets cab ON cc.cabinet_id = cab.id
-                    JOIN group_companies gc ON cc.group_company_id = gc.id
-                  ) AS master_view WHERE 1=1";
-
-        if ($companyName) $query .= " AND group_company = :group_company";
-        if ($cabinetLoc)  $query .= " AND physical_location = :cabinet_location";
-        if ($moduleType)  $query .= " AND module_type = :module_type";
-        
-        if ($fileCheck === 'scanned') {
-            $query .= " AND raw_file_field IS NOT NULL AND raw_file_field != '[]' AND raw_file_field != 'null' AND raw_file_field != ''";
-        } elseif ($fileCheck === 'pending') {
-            $query .= " AND (raw_file_field IS NULL OR raw_file_field = '[]' OR raw_file_field = 'null' OR raw_file_field = '')";
+        else {
+            $query = "SELECT * FROM {$table} WHERE 1=1";
+            if ($companyId && $table !== 'users') {
+                $query .= " AND group_company_id = :company_id";
+            }
+            $query .= " ORDER BY id DESC LIMIT :limit OFFSET :offset";
         }
 
-        if ($searchTerm) {
-            $query .= " AND (system_ref_no LIKE :search OR primary_title LIKE :search OR physical_location LIKE :search)";
+        // --- DATABASE EXECUTION STACK ---
+        $stmt = $pdo->prepare($query);
+
+        // Bind global pagination integer parameters via bindValue explicitly
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+
+        // Bind contextual conditional properties safely depending on current runtime requirements
+        if ($table === 'agreements') {
+            if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+            if ($categoryId)   $stmt->bindValue(':category_id', $categoryId, PDO::PARAM_INT);
+            if ($officerId)    $stmt->bindValue(':officer_id', $officerId, PDO::PARAM_INT);
+            if ($cabinetId)    $stmt->bindValue(':cabinet_id', $cabinetId, PDO::PARAM_INT);
+            if ($statusFilter) $stmt->bindValue(':status', $statusFilter, PDO::PARAM_STR);
+            if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+        }
+        elseif ($table === 'court_cases') {
+            if ($companyId)   $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+            if ($courtId)     $stmt->bindValue(':court_id', $courtId, PDO::PARAM_INT);
+            if ($officerId)   $stmt->bindValue(':officer_id', $officerId, PDO::PARAM_INT);
+            if ($caseNoFilter)$stmt->bindValue(':case_number', '%' . $caseNoFilter . '%', PDO::PARAM_STR);
+            if ($caseStatus)  $stmt->bindValue(':case_status', $caseStatus, PDO::PARAM_STR);
+            if ($searchTerm)  $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+        }
+        elseif ($table === 'payments') {
+            if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+            if ($sourceType)   $stmt->bindValue(':source_type', $sourceType, PDO::PARAM_STR);
+            if ($paRefFilter)  $stmt->bindValue(':pa_ref', '%' . $paRefFilter . '%', PDO::PARAM_STR);
+            if ($ecfRefFilter) $stmt->bindValue(':ecf_ref', '%' . $ecfRefFilter . '%', PDO::PARAM_STR);
+            if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+        }
+        elseif ($table === 'physical_archives_master') {
+            if (!empty($_POST['group_company_id']))   $stmt->bindValue(':group_company', trim($_POST['group_company_id']), PDO::PARAM_STR);
+            if (!empty($_POST['cabinet_location']))   $stmt->bindValue(':cabinet_location', trim($_POST['cabinet_location']), PDO::PARAM_STR);
+            if (!empty($_POST['module_type']))        $stmt->bindValue(':module_type', trim($_POST['module_type']), PDO::PARAM_STR);
+            if (!empty($_POST['search_term']))        $stmt->bindValue(':search', '%' . trim($_POST['search_term']) . '%', PDO::PARAM_STR);
+        }
+        else {
+            if ($companyId && $table !== 'users') {
+                $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+            }
         }
 
-        $query .= " ORDER BY system_ref_no DESC LIMIT :limit OFFSET :offset";
-    }
-    else {
-        $query = "SELECT * FROM {$table} WHERE 1=1";
-        if ($companyId && $table !== 'users') {
-            $query .= " AND group_company_id = :company_id";
-        }
-        $query .= " ORDER BY id DESC LIMIT :limit OFFSET :offset";
-    }
-    
-    // --- DATABASE EXECUTION STACK ---
-    $stmt = $pdo->prepare($query);
-    
-    // Bind global pagination integer parameters via bindValue explicitly
-    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    
-    // Bind contextual conditional properties safely depending on current runtime requirements
-    if ($table === 'agreements') {
-        if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
-        if ($categoryId)   $stmt->bindValue(':category_id', $categoryId, PDO::PARAM_INT);
-        if ($officerId)    $stmt->bindValue(':officer_id', $officerId, PDO::PARAM_INT);
-        if ($cabinetId)    $stmt->bindValue(':cabinet_id', $cabinetId, PDO::PARAM_INT);
-        if ($statusFilter) $stmt->bindValue(':status', $statusFilter, PDO::PARAM_STR);
-        if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
-    } 
-    elseif ($table === 'court_cases') {
-        if ($companyId)   $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
-        if ($courtId)     $stmt->bindValue(':court_id', $courtId, PDO::PARAM_INT);
-        if ($officerId)   $stmt->bindValue(':officer_id', $officerId, PDO::PARAM_INT);
-        if ($caseNoFilter)$stmt->bindValue(':case_number', '%' . $caseNoFilter . '%', PDO::PARAM_STR);
-        if ($caseStatus)  $stmt->bindValue(':case_status', $caseStatus, PDO::PARAM_STR);
-        if ($searchTerm)  $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
-    }
-    elseif ($table === 'payments') {
-        if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
-        if ($sourceType)   $stmt->bindValue(':source_type', $sourceType, PDO::PARAM_STR);
-        if ($paRefFilter)  $stmt->bindValue(':pa_ref', '%' . $paRefFilter . '%', PDO::PARAM_STR);
-        if ($ecfRefFilter) $stmt->bindValue(':ecf_ref', '%' . $ecfRefFilter . '%', PDO::PARAM_STR);
-        if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
-    }
-elseif ($table === 'physical_archives_master') {
-        if (!empty($_POST['group_company_id']))   $stmt->bindValue(':group_company', trim($_POST['group_company_id']), PDO::PARAM_STR);
-        if (!empty($_POST['cabinet_location']))   $stmt->bindValue(':cabinet_location', trim($_POST['cabinet_location']), PDO::PARAM_STR);
-        if (!empty($_POST['module_type']))        $stmt->bindValue(':module_type', trim($_POST['module_type']), PDO::PARAM_STR);
-        if (!empty($_POST['search_term']))        $stmt->bindValue(':search', '%' . trim($_POST['search_term']) . '%', PDO::PARAM_STR);
-    }
-    else {
-        if ($companyId && $table !== 'users') {
-            $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
-        }
-    }
-    
-    $stmt->execute();
-    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
-    exit;
+        $stmt->execute();
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+        exit;
+
+    /* ==========================================================================
+       Dashboard and Agenda Widgets
+       ========================================================================== */
 
     case 'fetch_all_agenda_tasks':
         try {
@@ -828,7 +832,7 @@ elseif ($table === 'physical_archives_master') {
         }
         break;
 
-        case 'filter_dashboard_metrics':
+    case 'filter_dashboard_metrics':
         try {
             $companyId = !empty($_POST['group_company_id']) ? intval($_POST['group_company_id']) : null;
             $missingEcfOnly = !empty($_POST['missing_ecf_only']) && $_POST['missing_ecf_only'] === '1';
@@ -863,9 +867,7 @@ elseif ($table === 'physical_archives_master') {
             $nextHearingDate = $nextHearingRaw ? date('F d', strtotime($nextHearingRaw)) : 'None Scheduled';
 
             $awaitingEcfAmount = $pdo->query("SELECT SUM(amount) FROM payments WHERE (ecf_ref_number IS NULL OR ecf_ref_number = '') " . ($companyId ? " AND id IN (SELECT id FROM agreements WHERE group_company_id={$companyId}) " : ""))->fetchColumn() ?: 0.00;
-
             // --- FETCH FILTERED DATA ARRAYS ---
-// --- FETCH FILTERED DATA ARRAYS ---
             $activeLitigations = $pdo->query("
                 SELECT cc.id, cc.case_parties, cc.case_status, gc.company_name AS group_company, cr.room_name
                 FROM court_cases cc
@@ -885,37 +887,37 @@ elseif ($table === 'physical_archives_master') {
             // --- FIXED TASKS QUERY SECTION ---
             // We now pull missing codes directly from agreements and court_cases rows
             $agendaSql = "
-                SELECT id, CONCAT('Check Pending Agreement: ', title) AS task_title, 'Pending' AS task_status, '#f59e0b' AS left_border_color 
+                SELECT id, CONCAT('Check Pending Agreement: ', title) AS task_title, 'Pending' AS task_status, '#f59e0b' AS left_border_color
                 FROM agreements WHERE initial_status = 'Pending' " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
-                
+
                 UNION ALL
-                
-                SELECT id, CONCAT('Add New Court Case: ', case_parties) AS task_title, 'Filing Stage' AS task_status, '#3b82f6' AS left_border_color 
+
+                SELECT id, CONCAT('Add New Court Case: ', case_parties) AS task_title, 'Filing Stage' AS task_status, '#3b82f6' AS left_border_color
                 FROM court_cases WHERE case_status = 'Filing Stage' " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
-                
+
                 UNION ALL
-                
-                SELECT id, CONCAT('Missing tracking code for Agreement: ', title) AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color 
+
+                SELECT id, CONCAT('Missing tracking code for Agreement: ', title) AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color
                 FROM agreements WHERE (pa_ref_number = '' OR pa_ref_number IS NULL OR ecf_ref_number = '' OR ecf_ref_number IS NULL) " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
-                
+
                 UNION ALL
-                
-                SELECT id, CONCAT('Missing tracking code for Case: ', case_number) AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color 
+
+                SELECT id, CONCAT('Missing tracking code for Case: ', case_number) AS task_title, 'Missing Ref' AS task_status, '#ef4444' AS left_border_color
                 FROM court_cases WHERE (pa_ref_number = '' OR pa_ref_number IS NULL OR ecf_ref_number = '' OR ecf_ref_number IS NULL) " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
-                
+
                 UNION ALL
-                
-                SELECT id, CONCAT('Upload Document Scan for: ', title) AS task_title, 'Upload Pending' AS task_status, '#64748b' AS left_border_color 
+
+                SELECT id, CONCAT('Upload Document Scan for: ', title) AS task_title, 'Upload Pending' AS task_status, '#64748b' AS left_border_color
                 FROM agreements WHERE (file_attachment_path IS NULL OR file_attachment_path = '[]' OR file_attachment_path = 'null') " . ($companyId ? " AND group_company_id = {$companyId}" : "") . "
-                
+
                 ORDER BY id DESC LIMIT 6";
-            
+
             $agendaTasks = $pdo->query($agendaSql)->fetchAll(PDO::FETCH_ASSOC);
 
             // If the alert filter button is clicked, filter down only to tracking row entries
             if ($missingEcfOnly) {
-                $agendaTasks = array_filter($agendaTasks, function($t) { 
-                    return $t['task_status'] === 'Missing Ref'; 
+                $agendaTasks = array_filter($agendaTasks, function($t) {
+                    return $t['task_status'] === 'Missing Ref';
                 });
             }
 
@@ -953,7 +955,7 @@ elseif ($table === 'physical_archives_master') {
                 <div class="agenda-list-stack" style="display: flex; flex-direction: column; gap: 10px;">
                     <?php if (count($agendaTasks) > 0): ?>
                         <?php foreach ($agendaTasks as $task): ?>
-                            <?php 
+                            <?php
                                 $badgeType = 'progress';
                                 if ($task['task_status'] === 'Pending') $badgeType = 'pending';
                                 if ($task['task_status'] === 'Filing Stage') $badgeType = 'progress';
@@ -966,7 +968,7 @@ elseif ($table === 'physical_archives_master') {
                             </div>
                         <?php endforeach; ?>
                     <?php else: ?>
-                        <div style="background: #f8fafc; padding: 32px; border-radius: 8px; text-align: center; color: #64748b; font-size: 13px; font-weight: 600; border: 1px dashed #cbd5e1;">✔ No tasks found! Everything looks clean.</div>
+                        <div style="background: #f8fafc; padding: 32px; border-radius: 8px; text-align: center; color: #64748b; font-size: 13px; font-weight: 600; border: 1px dashed #cbd5e1;">No tasks found! Everything looks clean.</div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -1043,5 +1045,14 @@ elseif ($table === 'physical_archives_master') {
             exit;
         }
         break;
+
+    /* ==========================================================================
+       Fallback
+       ========================================================================== */
+
+    default:
+        echo json_encode(['success' => false, 'message' => 'Unknown core application execution transaction path routing.']);
+        break;
+
 }
 ?>

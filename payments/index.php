@@ -88,18 +88,20 @@ $court_cases = $pdo->query("SELECT id, case_number FROM court_cases ORDER BY cas
                 <div><label>Due Date</label><input type="date" name="due_date" id="edit_due" class="form-field-input" readonly></div>
                 <div><label>Payment Date</label><input type="date" name="payment_date" id="edit_pay_date" class="form-field-input" readonly></div>
             </div>
-            <!-- Add these inside drawerForm -->
+         
+<!-- Fixed layout container alignments inside drawerForm -->
 <div class="form-group-row row-split">
-    <div><label class="field-label-text">Currency</label>
+    <div>
+        <label class="field-label-text">Currency</label>
         <input type="text" name="currency" id="edit_currency" class="form-field-input" readonly>
     </div>
-<div class="form-group-row">
-    <label class="field-label-text">Source Type</label>
-    <select name="source_type" id="edit_source_type" class="form-field-select" disabled>
-        <option value="Agreement">Agreement</option>
-        <option value="Court Case">Court Case</option>
-    </select>
-</div>
+    <div>
+        <label class="field-label-text">Source Type</label>
+        <select name="source_type" id="edit_source_type" class="form-field-select" disabled>
+            <option value="Agreement">Agreement</option>
+            <option value="Court Case">Court Case</option>
+        </select>
+    </div>
 </div>
 
 <div class="form-group-row row-split">
@@ -206,18 +208,63 @@ function openDetailDrawer(id) {
                 document.getElementById('edit_linked_name').value = 'N/A';
             }
 
-            // 3. Render Files
+// 3. Render Files Safely supporting multi-array collection objects
             const fileContainer = document.getElementById('drawerFilesContainer'); 
             fileContainer.innerHTML = '';
-            const files = JSON.parse(d.file_attachment_path || '[]');
             
-            files.forEach((path, idx) => {
-                fileContainer.innerHTML += `
-                    <div class="mb-2">
-                        📄 <a href="..${path}" target="_blank">${path.split('/').pop()}</a> 
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removePaymentFile(${d.id}, ${idx})">×</button>
-                    </div>`;
-            });
+            let files = [];
+            try {
+                // Handle double-escaped strings or stringified JSON structures safely
+                let rawPathData = d.file_attachment_path;
+                if (typeof rawPathData === 'string') {
+                    // Clean out systemic double backslashes before running JSON parser matrix
+                    rawPathData = rawPathData.replace(/\\+/g, '/');
+                    files = JSON.parse(rawPathData || '[]');
+                } else {
+                    files = rawPathData;
+                }
+                
+                if (!Array.isArray(files)) files = [];
+            } catch (e) {
+                console.error("Error parsing attachment metadata list:", e);
+                files = [];
+            }
+            
+            // Render file elements if array list contains valid items cleanly
+            if (files.length > 0) {
+                files.forEach((path, idx) => {
+                    if (!path) return;
+                    
+                    const safePath = path.replace(/\\/g, '/'); // Standardize all backslashes immediately
+                    const fileName = safePath.split('/').pop();
+                    
+                    // Create structural DOM elements programmatically to shield text character crashes
+                    const fileRow = document.createElement('div');
+                    fileRow.className = 'mb-2';
+                    fileRow.style.display = 'flex';
+                    fileRow.style.alignItems = 'center';
+                    fileRow.style.gap = '8px';
+                    
+                    fileRow.innerHTML = `
+                        <span>📄</span> 
+                        <a href="..${safePath}" target="_blank" style="text-decoration: none; color: var(--primary-brand); font-weight: 600;">${htmlspecialchars_js(fileName)}</a>
+                    `;
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.type = 'button';
+                    deleteBtn.className = 'btn btn-sm btn-outline-danger';
+                    deleteBtn.style.padding = '2px 6px';
+                    deleteBtn.style.cursor = 'pointer';
+                    deleteBtn.textContent = '×';
+                    deleteBtn.onclick = function() { removePaymentFile(d.id, idx); };
+                    
+                    fileRow.appendChild(deleteBtn);
+                    fileContainer.appendChild(fileRow);
+                });
+            } else {
+                // Clear state message indicators
+                fileContainer.innerHTML = '<span style="font-style: italic; color: var(--text-light); font-size: 13px;">No transaction receipts attached yet</span>';
+            }
 
             // 4. Reveal Drawer
             document.getElementById('drawerOverlay').classList.add('active');
@@ -272,5 +319,16 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
         const fd = new FormData(); fd.append('action', 'remove_payment_file'); fd.append('id', id); fd.append('file_index', index);
         fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd }).then(() => openDetailDrawer(id));
     }
+
+    // Quick structural translation string encoding protection wrapper helper
+function htmlspecialchars_js(string) {
+    if (!string) return '';
+    return string
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
