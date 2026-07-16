@@ -709,6 +709,51 @@ elseif ($table === 'payments') {
         
         $query .= " ORDER BY p.id DESC LIMIT :limit OFFSET :offset";
     }
+elseif ($table === 'physical_archives_master') {
+        // Capture incoming string keys matching your new form element variables safely
+        $companyName = !empty($_POST['group_company_id']) ? trim($_POST['group_company_id']) : null;
+        $cabinetLoc  = !empty($_POST['cabinet_location']) ? trim($_POST['cabinet_location']) : null;
+        $moduleType  = !empty($_POST['module_type']) ? trim($_POST['module_type']) : null;
+        $fileCheck   = !empty($_POST['file_check']) ? trim($_POST['file_check']) : null;
+
+        $query = "SELECT * FROM (
+                    SELECT 
+                        a.id AS original_id, cab.cabinet_location AS physical_location,
+                        a.physical_ref_no AS system_ref_no, a.title AS primary_title,
+                        gc.company_name AS group_company, a.party_b AS structural_subtext,
+                        'Agreement' AS module_type, a.file_attachment_path AS raw_file_field
+                    FROM agreements a
+                    JOIN archive_cabinets cab ON a.cabinet_id = cab.id
+                    JOIN group_companies gc ON a.group_company_id = gc.id
+                    
+                    UNION ALL
+                    
+                    SELECT 
+                        cc.id AS original_id, cab.cabinet_location AS physical_location,
+                        cc.case_number AS system_ref_no, cc.case_parties AS primary_title,
+                        gc.company_name AS group_company, cc.counsel_name AS structural_subtext,
+                        'Court Case' AS module_type, cc.file_attachment_path AS raw_file_field
+                    FROM court_cases cc
+                    JOIN archive_cabinets cab ON cc.cabinet_id = cab.id
+                    JOIN group_companies gc ON cc.group_company_id = gc.id
+                  ) AS master_view WHERE 1=1";
+
+        if ($companyName) $query .= " AND group_company = :group_company";
+        if ($cabinetLoc)  $query .= " AND physical_location = :cabinet_location";
+        if ($moduleType)  $query .= " AND module_type = :module_type";
+        
+        if ($fileCheck === 'scanned') {
+            $query .= " AND raw_file_field IS NOT NULL AND raw_file_field != '[]' AND raw_file_field != 'null' AND raw_file_field != ''";
+        } elseif ($fileCheck === 'pending') {
+            $query .= " AND (raw_file_field IS NULL OR raw_file_field = '[]' OR raw_file_field = 'null' OR raw_file_field = '')";
+        }
+
+        if ($searchTerm) {
+            $query .= " AND (system_ref_no LIKE :search OR primary_title LIKE :search OR physical_location LIKE :search)";
+        }
+
+        $query .= " ORDER BY system_ref_no DESC LIMIT :limit OFFSET :offset";
+    }
     else {
         $query = "SELECT * FROM {$table} WHERE 1=1";
         if ($companyId && $table !== 'users') {
@@ -747,6 +792,12 @@ elseif ($table === 'payments') {
         if ($paRefFilter)  $stmt->bindValue(':pa_ref', '%' . $paRefFilter . '%', PDO::PARAM_STR);
         if ($ecfRefFilter) $stmt->bindValue(':ecf_ref', '%' . $ecfRefFilter . '%', PDO::PARAM_STR);
         if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+    }
+elseif ($table === 'physical_archives_master') {
+        if (!empty($_POST['group_company_id']))   $stmt->bindValue(':group_company', trim($_POST['group_company_id']), PDO::PARAM_STR);
+        if (!empty($_POST['cabinet_location']))   $stmt->bindValue(':cabinet_location', trim($_POST['cabinet_location']), PDO::PARAM_STR);
+        if (!empty($_POST['module_type']))        $stmt->bindValue(':module_type', trim($_POST['module_type']), PDO::PARAM_STR);
+        if (!empty($_POST['search_term']))        $stmt->bindValue(':search', '%' . trim($_POST['search_term']) . '%', PDO::PARAM_STR);
     }
     else {
         if ($companyId && $table !== 'users') {

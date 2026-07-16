@@ -58,15 +58,27 @@ function paginate(table, containerId, pageNumber) {
     const activeEcfRefFilter   = urlParams.get('ecf_ref') || '';
     const activeSourceFilter   = urlParams.get('source_type') || '';
 
+    // Archive Master specific URL filter variables
+    const activeCabinetLocation = urlParams.get('cabinet') || '';
+    const activeFileCheckFilter = urlParams.get('file_check') || '';
+    const activeModuleFilter    = urlParams.get('module_type') || '';
+
     const fd = new FormData();
     fd.append('action', 'fetch_paginated_data');
     fd.append('table', table);
     fd.append('page', newPage);
 
-    // 1. Map global entity and structural filters
+// 1. Map global entity and structural filters
     if (activeEntityFilter)   fd.append('group_company_id', activeEntityFilter);
     if (activeOfficerFilter)  fd.append('assigned_officer_id', activeOfficerFilter);
     if (activeSearchFilter)   fd.append('search_term', activeSearchFilter);
+    
+    // 1b. Map Physical Archive module constraints dynamically
+    if (table === 'physical_archives_master') {
+        if (activeCabinetLocation) fd.append('cabinet_location', activeCabinetLocation);
+        if (activeFileCheckFilter) fd.append('file_check', activeFileCheckFilter);
+        if (activeModuleFilter)    fd.append('module_type', activeModuleFilter);
+    }
 
     // 2. Map Agreement modular payload variants
     if (activeCategoryFilter) fd.append('category_id', activeCategoryFilter);
