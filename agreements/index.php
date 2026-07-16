@@ -38,17 +38,67 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
 </div>
 <?php endif; ?>
 
-<div class="filtering-sub-bar">
-    <div class="search-wrapper-input"><input type="text" placeholder="Filter by contract party..."></div>
-    <form action="" method="GET">
-        <select name="entity" class="dropdown-selector-filter entity-select" onchange="this.form.submit()">
+<form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; background: #ffffff; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+    <!-- 1. Text Search Input Field -->
+    <div class="search-wrapper-input" style="flex: 1; min-width: 200px; margin-bottom: 0;">
+        <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search title, party B..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
+    </div>
+    
+    <!-- 2. Group Subsidiary Filter -->
+    <div style="margin-bottom: 0;">
+        <select name="entity" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
             <option value="">🏢 All Entities</option>
             <?php foreach ($companies as $comp): ?>
-                <option value="<?php echo $comp['id']; ?>" <?php echo ($entity_filter == $comp['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($comp['company_name']); ?></option>
+                <option value="<?php echo $comp['id']; ?>" <?php echo (($_GET['entity'] ?? '') == $comp['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($comp['company_name']); ?></option>
             <?php endforeach; ?>
         </select>
-    </form>
-</div>
+    </div>
+
+    <!-- 3. Category Filter -->
+    <div style="margin-bottom: 0;">
+        <select name="category" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+            <option value="">📁 All Categories</option>
+            <?php foreach ($categories as $cat): ?>
+                <option value="<?php echo $cat['id']; ?>" <?php echo (($_GET['category'] ?? '') == $cat['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($cat['category_name']); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+
+    <!-- 4. Legal Officer Filter -->
+    <div style="margin-bottom: 0;">
+        <select name="officer" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+            <option value="">💼 All Officers</option>
+            <?php foreach ($officers as $u): ?>
+                <option value="<?php echo $u['id']; ?>" <?php echo (($_GET['officer'] ?? '') == $u['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($u['full_name']); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+
+    <!-- 5. Storage Cabinet Filter -->
+    <div style="margin-bottom: 0;">
+        <select name="cabinet" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+            <option value="">🔒 All Vaults</option>
+            <?php foreach ($cabinets as $cb): ?>
+                <option value="<?php echo $cb['id']; ?>" <?php echo (($_GET['cabinet'] ?? '') == $cb['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($cb['cabinet_location']); ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+
+    <!-- 6. Lifecycle Status Filter -->
+    <div style="margin-bottom: 0;">
+        <select name="status" class="dropdown-selector-filter" onchange="this.form.submit()" style="margin-bottom: 0; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 13px;">
+            <option value="">📊 All Statuses</option>
+            <option value="Active" <?php echo (($_GET['status'] ?? '') === 'Active') ? 'selected' : ''; ?>>Active</option>
+            <option value="Pending" <?php echo (($_GET['status'] ?? '') === 'Pending') ? 'selected' : ''; ?>>Pending</option>
+            <option value="Renewing" <?php echo (($_GET['status'] ?? '') === 'Renewing') ? 'selected' : ''; ?>>Renewing</option>
+        </select>
+    </div>
+
+    <!-- 7. Clear Button -->
+    <?php if (!empty($_GET['entity']) || !empty($_GET['category']) || !empty($_GET['officer']) || !empty($_GET['cabinet']) || !empty($_GET['status']) || !empty($_GET['search'])): ?>
+        <a href="index.php" class="btn btn-secondary" style="padding: 8px 14px; font-size: 13px; text-decoration: none; border-radius: 6px; background: #f1f5f9; color: #475569; font-weight: 600;">Clear</a>
+    <?php endif; ?>
+</form>
 
 <div class="data-ledger-card">
     <table class="data-ledger-table">
@@ -355,8 +405,72 @@ function removeFile(id, index) {
 }
 
     // 1. Initialize pagination controls
+    // 1. Initialize pagination controls
+// 1. Initialize your standard pagination controls
     initPagination('agreements', 'data-body-agreements');
 
+    // 2. CRITICAL FIX: Intercept the page load and pass the active filter to the router
+    document.addEventListener("DOMContentLoaded", function() {
+        // Read the ?entity=X parameter from the browser address bar
+        const urlParams = new URLSearchParams(window.location.search);
+        const entityFilterId = urlParams.get('entity') || '';
+
+        // Safely execute paginate with the filter parameters attached
+        paginateAgreementsWithFilter('agreements', 'data-body-agreements', 1, entityFilterId);
+    });
+
+    // Custom helper function that replaces the default paginate call for this filtered ledger view
+    function paginateAgreementsWithFilter(table, targetBodyId, page, entityId) {
+        const fd = new FormData();
+        fd.append('action', 'fetch_paginated_data');
+        fd.append('table', table);
+        fd.append('page', page);
+        
+        // Pass the company filter along if it exists in the URL
+        if (entityId) {
+            fd.append('group_company_id', entityId);
+        }
+
+        fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success && res.data) {
+                const body = document.getElementById(targetBodyId);
+                body.innerHTML = ''; // Clear current rows
+                
+                if (res.data.length === 0) {
+                    body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color: var(--text-light);">No records match this company filter.</td></tr>';
+                    return;
+                }
+
+                // Render out only the filtered rows dynamically
+                res.data.forEach(row => {
+                    body.innerHTML += `
+                        <tr id="agreement-row-${row.id}" onclick="openDetailDrawer(${row.id})" style="cursor:pointer;">
+                            <td>
+                                <strong style="color: var(--text-dark); display:block;">${escapeHtml(row.title)}</strong>
+                                <span style="font-size:11px; color: var(--text-light);">${escapeHtml(row.company_name)} | Party B: ${escapeHtml(row.party_b)}</span>
+                            </td>
+                            <td><span class="category-pill">${escapeHtml(row.category_name)}</span></td>
+                            <td><span style="font-weight:600; color: var(--text-dark);">${escapeHtml(row.officer_name)}</span></td>
+                            <td><span class="vault-location-text">${escapeHtml(row.cabinet_location)}</span></td>
+                            <td><span style="font-family:monospace; font-weight:700;">${row.expiry_date}</span></td>
+                            <td><span class="status-badge ${row.initial_status.toLowerCase()}">${row.initial_status}</span></td>
+                            <td onclick="event.stopPropagation()">
+                                <a href="/corporate-legal-system/agreements/download.php?id=${row.id}" class="action-link-icon">📥</a>
+                            </td>
+                        </tr>`;
+                });
+            }
+        })
+        .catch(err => console.error("Filter injection error:", err));
+    }
+
+    // Standard string helper to protect text output
+    function escapeHtml(text) {
+        if (!text) return 'None';
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
     // 2. Load the first page immediately on document ready
     document.addEventListener("DOMContentLoaded", function() {
         paginate('agreements', 'data-body-agreements', 1); 

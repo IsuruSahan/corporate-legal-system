@@ -13,9 +13,9 @@ function initPagination(table, containerId) {
 }
 
 // Change the function to accept 'page' instead of 'dir'
+// Change the function to accept 'page' instead of 'dir'
 function paginate(table, containerId, pageNumber) {
-    // 1. If pageNumber is provided as a number, use it. 
-    // If it's a direction (+1/-1), calculate the new page from state.
+    // 1. Calculate the target page number cleanly
     let newPage;
     if (typeof pageNumber === 'number' && Math.abs(pageNumber) === 1 && !paginationState[containerId]) {
         // Handle initial call
@@ -30,10 +30,27 @@ function paginate(table, containerId, pageNumber) {
 
     if (newPage < 1) return;
 
+   // --- READ ALL ACTIVE URL BAR FILTERS ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeEntityFilter = urlParams.get('entity') || '';
+    const activeCategoryFilter = urlParams.get('category') || '';
+    const activeOfficerFilter = urlParams.get('officer') || '';
+    const activeCabinetFilter = urlParams.get('cabinet') || '';
+    const activeStatusFilter = urlParams.get('status') || '';
+    const activeSearchFilter = urlParams.get('search') || '';
+
     const fd = new FormData();
     fd.append('action', 'fetch_paginated_data');
     fd.append('table', table);
     fd.append('page', newPage);
+
+    // Append all dynamic filter inputs to payload
+    if (activeEntityFilter) fd.append('group_company_id', activeEntityFilter);
+    if (activeCategoryFilter) fd.append('category_id', activeCategoryFilter);
+    if (activeOfficerFilter) fd.append('assigned_officer_id', activeOfficerFilter);
+    if (activeCabinetFilter) fd.append('cabinet_id', activeCabinetFilter);
+    if (activeStatusFilter) fd.append('initial_status', activeStatusFilter);
+    if (activeSearchFilter) fd.append('search_term', activeSearchFilter);
 
     fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
@@ -50,9 +67,9 @@ function paginate(table, containerId, pageNumber) {
         } else {
             alert("No more records to display.");
         }
-    });
+    })
+    .catch(err => console.error("Pagination networking processing failure:", err));
 }
-
 
 
 // Centralized Renderer

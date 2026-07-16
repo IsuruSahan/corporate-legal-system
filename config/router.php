@@ -155,6 +155,8 @@ case 'update_agreement':
             json_encode($existingPaths), $id // Saving the full merged JSON
         ]);
 
+recordAuditLog($pdo, 'UPDATE', 'Agreements', $id, "Updated agreement details and revisions for: " . $_POST['title']);
+
         echo json_encode(['success' => true, 'message' => 'Files updated successfully.']);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
@@ -635,8 +637,16 @@ case 'remove_court_file':
 case 'fetch_paginated_data':
     $table = $_POST['table'] ?? '';
     $page = isset($_POST['page']) ? (int)$_POST['page'] : 1;
-    $limit = 8; // Keep your limit
+    $limit = 8;
     $offset = ($page - 1) * $limit;
+    
+    // Capture all incoming dynamic filter variables safely
+    $companyId    = !empty($_POST['group_company_id']) ? intval($_POST['group_company_id']) : null;
+    $categoryId   = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
+    $officerId    = !empty($_POST['assigned_officer_id']) ? intval($_POST['assigned_officer_id']) : null;
+    $cabinetId    = !empty($_POST['cabinet_id']) ? intval($_POST['cabinet_id']) : null;
+    $statusFilter = !empty($_POST['initial_status']) ? trim($_POST['initial_status']) : null;
+    $searchTerm   = !empty($_POST['search_term']) ? trim($_POST['search_term']) : null;
 
     if ($table === 'court_cases') {
         $query = "SELECT cc.*, gc.company_name, cr.room_name, u.full_name AS officer_name 
@@ -644,7 +654,12 @@ case 'fetch_paginated_data':
                   LEFT JOIN group_companies gc ON cc.group_company_id = gc.id
                   LEFT JOIN court_rooms cr ON cc.court_id = cr.id
                   LEFT JOIN users u ON cc.assigned_officer_id = u.id
-                  ORDER BY cc.id DESC LIMIT ? OFFSET ?";
+                  WHERE 1=1";
+                  
+        if ($companyId) {
+            $query .= " AND cc.group_company_id = :company_id";
+        }
+        $query .= " ORDER BY cc.id DESC LIMIT :limit OFFSET :offset";
     } 
     elseif ($table === 'agreements') {
         $query = "SELECT a.*, gc.company_name, ac.category_name, u.full_name AS officer_name, cb.cabinet_location 
@@ -653,28 +668,61 @@ case 'fetch_paginated_data':
                   LEFT JOIN agreement_categories ac ON a.category_id = ac.id
                   LEFT JOIN users u ON a.assigned_officer_id = u.id
                   LEFT JOIN archive_cabinets cb ON a.cabinet_id = cb.id
-                  ORDER BY a.id DESC LIMIT ? OFFSET ?";
+                  WHERE 1=1";
+                  
+        // Inject new criteria checks into the query structure dynamically
+        if ($companyId)    $query .= " AND a.group_company_id = :company_id";
+        if ($categoryId)   $query .= " AND a.category_id = :category_id";
+        if ($officerId)    $query .= " AND a.assigned_officer_id = :officer_id";
+        if ($cabinetId)    $query .= " AND a.cabinet_id = :cabinet_id";
+        if ($statusFilter) $query .= " AND a.initial_status = :status";
+        if ($searchTerm)   $query .= " AND (a.title LIKE :search OR a.party_b LIKE :search OR a.physical_ref_no LIKE :search)";
+        
+        $query .= " ORDER BY a.id DESC LIMIT :limit OFFSET :offset";
     } 
     elseif ($table === 'payments') {
         $query = "SELECT p.*, gc.company_name 
                   FROM payments p
                   LEFT JOIN group_companies gc ON p.group_company_id = gc.id
-                  ORDER BY p.id DESC LIMIT ? OFFSET ?";
-    }
-    elseif ($table === 'physical_archives_master') {
-        $query = "SELECT * FROM physical_archives_master 
-                  ORDER BY system_ref_no DESC 
-                  LIMIT ? OFFSET ?";
+                  WHERE 1=1";
+                  
+        if ($companyId) {
+            $query .= " AND p.group_company_id = :company_id";
+        }
+        $query .= " ORDER BY p.id DESC LIMIT :limit OFFSET :offset";
     }
     else {
-        // Fallback for tables without specific joins
-        $query = "SELECT * FROM {$table} ORDER BY id DESC LIMIT ? OFFSET ?";
+        $query = "SELECT * FROM {$table} WHERE 1=1";
+        if ($companyId && $table !== 'users') {
+            $query .= " AND group_company_id = :company_id";
+        }
+        $query .= " ORDER BY id DESC LIMIT :limit OFFSET :offset";
     }
     
+    // Prepare transaction state parameters explicitly
     $stmt = $pdo->prepare($query);
-    $stmt->execute([$limit, $offset]);
+    
+    // Bind global pagination integer parameters
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    
+    // Bind contextual table parameters securely based on module type
+    if ($table === 'agreements') {
+        if ($companyId)    $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+        if ($categoryId)   $stmt->bindValue(':category_id', $categoryId, PDO::PARAM_INT);
+        if ($officerId)    $stmt->bindValue(':officer_id', $officerId, PDO::PARAM_INT);
+        if ($cabinetId)    $stmt->bindValue(':cabinet_id', $cabinetId, PDO::PARAM_INT);
+        if ($statusFilter) $stmt->bindValue(':status', $statusFilter, PDO::PARAM_STR);
+        if ($searchTerm)   $stmt->bindValue(':search', '%' . $searchTerm . '%', PDO::PARAM_STR);
+    } else {
+        if ($companyId && $table !== 'users') {
+            $stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+        }
+    }
+    
+    $stmt->execute();
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
-    break;
+    exit;
 
     case 'fetch_all_agenda_tasks':
         try {
