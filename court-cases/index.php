@@ -236,13 +236,16 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
     <label class="field-label-text">Current Attachments</label>
     <div id="drawerFilesContainer" class="mb-3"></div>
     
-    <div id="addFilesContainer" style="display:none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+<div id="addFilesContainer" style="display:none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
         <label class="field-label-text">Add More Files</label>
         <div class="file-dropzone-compact" onclick="document.getElementById('editFileInput').click()" 
-             style="padding: 12px; border: 2px dashed var(--border-color); border-radius: 6px; text-align: center; cursor: pointer; color: var(--primary-brand);">
+             style="padding: 12px; border: 2px dashed var(--border-color); border-radius: 6px; text-align: center; cursor: pointer; color: var(--primary-brand); margin-bottom: 10px;">
              <span class="browse-trigger-text">Browse & Upload PDF/DOCX</span>
         </div>
         <input type="file" name="court_case_files[]" id="editFileInput" multiple class="form-field-input" accept=".pdf,.docx" style="display:none;">
+        
+        <!-- Target container where the list of newly picked court case files will instantly render -->
+        <div id="queuedCourtFilesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
 </div>
 
@@ -478,6 +481,40 @@ function removeFile(id, index, module) { // Ensure 'module' is passed here
     });
 }
 
+document.addEventListener('DOMContentLoaded', function() {
+    const editFileInput = document.getElementById('editFileInput');
+    const queuedCourtFilesList = document.getElementById('queuedCourtFilesList');
+
+    if (editFileInput && queuedCourtFilesList) {
+        editFileInput.addEventListener('change', function(e) {
+            // Clear out the UI list from any previous file selections
+            queuedCourtFilesList.innerHTML = '';
+            
+            const files = e.target.files;
+            if (files.length === 0) return;
+
+            // Loop through the selected files array and display their parameters
+            Array.from(files).forEach(file => {
+                const fileRow = document.createElement('div');
+                fileRow.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; font-size: 12px;";
+                
+                // Truncate long file names cleanly to preserve UI space
+                const fileNameDisplay = file.name.length > 30 ? file.name.substring(0, 27) + '...' : file.name;
+
+                fileRow.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; color: #334155;">
+                        <span>📎</span>
+                        <span style="font-weight: 600;" title="${file.name}">${fileNameDisplay}</span>
+                        <span style="color: #94a3b8; font-size: 11px;">(${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                    </div>
+                    <span style="font-weight: 700; font-size: 10px; color: #94a3b8; background: #fff7ed; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">Queued</span>
+                `;
+                
+                queuedCourtFilesList.appendChild(fileRow);
+            });
+        });
+    }
+});
     // 1. Initialize pagination controls
 // 1. Initialize and render pagination controls safely on runtime load
     document.addEventListener("DOMContentLoaded", function() {

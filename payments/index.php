@@ -123,10 +123,21 @@ $court_cases = $pdo->query("SELECT id, case_number FROM court_cases ORDER BY cas
     <input type="text" name="ecf_ref_number" id="edit_ecf" class="form-field-input" readonly>
 </div>
             <div class="form-group-row"><label>Comment</label><textarea name="payment_comment" id="edit_comment" class="form-field-textarea" readonly></textarea></div>
-            <div class="form-group-row">
-                <label>Attachments</label>
-                <div id="drawerFilesContainer"></div>
-                <div id="addFilesContainer" style="display:none; margin-top: 10px;"><input type="file" name="payment_files[]" multiple></div>
+<div class="form-group-row">
+                <label class="field-label-text">Current Attachments</label>
+                <div id="drawerFilesContainer" class="mb-3"></div>
+                
+                <div id="addFilesContainer" style="display:none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+                    <label class="field-label-text">Add More Files</label>
+                    <div class="file-dropzone-compact" onclick="document.getElementById('editFileInput').click()" 
+                         style="padding: 12px; border: 2px dashed var(--border-color); border-radius: 6px; text-align: center; cursor: pointer; color: var(--primary-brand); margin-bottom: 10px;">
+                         <span class="browse-trigger-text">Browse & Upload PDF/DOCX</span>
+                    </div>
+                    <input type="file" name="payment_files[]" id="editFileInput" multiple class="form-field-input" accept=".pdf,.docx" style="display:none;">
+                    
+                    <!-- Target container where the list of newly picked payment files will instantly render -->
+                    <div id="queuedPaymentFilesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                </div>
             </div>
             <div style="margin-top: 24px; display: flex; justify-content: space-between;">
                 <button type="button" class="btn" style="background: var(--bg-unlinked); color: var(--text-unlinked);" onclick="deleteActiveRecord()">Delete</button>
@@ -162,9 +173,43 @@ const agreements = <?php echo json_encode($agreements); ?>;
             }
         };
 
-        if (searchInput) searchInput.addEventListener('keypress', submitFormOnEnter);
+if (searchInput) searchInput.addEventListener('keypress', submitFormOnEnter);
         if (paInput)      paInput.addEventListener('keypress', submitFormOnEnter);
         if (ecfInput)     ecfInput.addEventListener('keypress', submitFormOnEnter);
+    });
+
+    // Payment File Selection Live Visual Queue Handler Array Mapping
+    document.addEventListener('DOMContentLoaded', function() {
+        const editFileInput = document.getElementById('editFileInput');
+        const queuedPaymentFilesList = document.getElementById('queuedPaymentFilesList');
+
+        if (editFileInput && queuedPaymentFilesList) {
+            editFileInput.addEventListener('change', function(e) {
+                // Wipe past iterations clean
+                queuedPaymentFilesList.innerHTML = '';
+                
+                const files = e.target.files;
+                if (files.length === 0) return;
+
+                Array.from(files).forEach(file => {
+                    const fileRow = document.createElement('div');
+                    fileRow.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; font-size: 12px;";
+                    
+                    const fileNameDisplay = file.name.length > 30 ? file.name.substring(0, 27) + '...' : file.name;
+
+                    fileRow.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px; color: #334155;">
+                            <span>📎</span>
+                            <span style="font-weight: 600;" title="${file.name}">${fileNameDisplay}</span>
+                            <span style="color: #94a3b8; font-size: 11px;">(${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                        </div>
+                        <span style="font-weight: 700; font-size: 10px; color: #0284c7; background: #f0f9ff; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">Queued</span>
+                    `;
+                    
+                    queuedPaymentFilesList.appendChild(fileRow);
+                });
+            });
+        }
     });
 function openDetailDrawer(id) {
     const fd = new FormData(); 
@@ -211,6 +256,12 @@ function openDetailDrawer(id) {
 // 3. Render Files Safely supporting multi-array collection objects
             const fileContainer = document.getElementById('drawerFilesContainer'); 
             fileContainer.innerHTML = '';
+
+            // Clean previous input queues from memory cache blocks
+            const freshQueueContainer = document.getElementById('queuedPaymentFilesList');
+            if (freshQueueContainer) freshQueueContainer.innerHTML = '';
+            const freshInputContainer = document.getElementById('editFileInput');
+            if (freshInputContainer) freshInputContainer.value = '';
             
             let files = [];
             try {
@@ -283,8 +334,16 @@ function openDetailDrawer(id) {
         document.querySelectorAll('input, textarea, select').forEach(el => { el.removeAttribute('readonly'); el.removeAttribute('disabled'); });
     }
 
-    function closeDetailDrawer() { document.getElementById('drawerOverlay').classList.remove('active'); }
-
+function closeDetailDrawer() { 
+        document.getElementById('drawerOverlay').classList.remove('active'); 
+        
+        // Safety guard checks to cleanly unmount input elements on closing
+        const inputEl = document.getElementById('editFileInput');
+        const queueEl = document.getElementById('queuedPaymentFilesList');
+        
+        if (inputEl) inputEl.value = '';
+        if (queueEl) queueEl.innerHTML = '';
+    }
 document.getElementById('drawerForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const btn = document.getElementById('drawerSaveBtn');
@@ -315,9 +374,26 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
         fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd }).then(() => window.location.reload());
     }
 
-    function removePaymentFile(id, index) {
-        const fd = new FormData(); fd.append('action', 'remove_payment_file'); fd.append('id', id); fd.append('file_index', index);
-        fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd }).then(() => openDetailDrawer(id));
+function removePaymentFile(id, index) {
+        if (!confirm("Are you sure you want to permanently remove this transaction attachment?")) return;
+
+        const fd = new FormData(); 
+        fd.append('action', 'remove_payment_file'); 
+        fd.append('id', id); 
+        fd.append('file_index', index);
+        
+        fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            console.log("Payment file extraction execution payload:", data);
+            if (data.success) {
+                // Instantly re-trigger the data fetch layer to redraw remaining files cleanly
+                openDetailDrawer(id);
+            } else {
+                alert(data.message || "Failed to drop transaction asset link parameter.");
+            }
+        })
+        .catch(err => console.error("Network communication stall during file deletion:", err));
     }
 
     // Quick structural translation string encoding protection wrapper helper

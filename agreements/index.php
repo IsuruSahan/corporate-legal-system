@@ -217,13 +217,16 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
     <div id="drawerFilesContainer" class="mb-3">
         </div>
     
-    <div id="addFilesContainer" style="display:none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+<div id="addFilesContainer" style="display:none; margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
         <label class="field-label-text">Add More Files</label>
         <div class="file-dropzone-compact" onclick="document.getElementById('editFileInput').click()" 
-             style="padding: 12px; border: 2px dashed var(--border-color); border-radius: 6px; text-align: center; cursor: pointer; color: var(--primary-brand);">
+             style="padding: 12px; border: 2px dashed var(--border-color); border-radius: 6px; text-align: center; cursor: pointer; color: var(--primary-brand); margin-bottom: 10px;">
              <span class="browse-trigger-text">Browse & Upload PDF/DOCX</span>
         </div>
         <input type="file" name="agreement_files[]" id="editFileInput" multiple class="form-field-input" accept=".pdf,.docx" style="display:none;">
+        
+        <!-- Target container where the list of newly picked files will instantly render -->
+        <div id="queuedFilesList" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
 </div>
 
@@ -339,6 +342,9 @@ function disableEditMode() {
 
 function closeDetailDrawer() {
     document.getElementById('drawerOverlay').classList.remove('active');
+    // Add these lines inside your drawer closing/reset function:
+    document.getElementById('editFileInput').value = ''; // Resets the actual file inputs field
+    document.getElementById('queuedFilesList').innerHTML = ''; // Wipes out the queued text element lists
 }
 
 document.getElementById('drawerForm').addEventListener('submit', function(e) {
@@ -364,8 +370,43 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
     });
 });
 
+document.addEventListener('DOMContentLoaded', function() {
+    const editFileInput = document.getElementById('editFileInput');
+    const queuedFilesList = document.getElementById('queuedFilesList');
+
+    if (editFileInput && queuedFilesList) {
+        editFileInput.addEventListener('change', function(e) {
+            // Clear out the UI list from any previous file selections
+            queuedFilesList.innerHTML = '';
+            
+            const files = e.target.files;
+            if (files.length === 0) return;
+
+            // Loop through the selected files array and display their parameters
+            Array.from(files).forEach(file => {
+                const fileRow = document.createElement('div');
+                fileRow.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; font-size: 12px;";
+                
+                // Truncate long file names cleanly to preserve UI space
+                const fileNameDisplay = file.name.length > 30 ? file.name.substring(0, 27) + '...' : file.name;
+
+                fileRow.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; color: #334155;">
+                        <span>📎</span>
+                        <span style="font-weight: 600;" title="${file.name}">${fileNameDisplay}</span>
+                        <span style="color: #94a3b8; font-size: 11px;">(${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                    </div>
+                    <span style="font-weight: 700; font-size: 10px; color: #3b82f6; background: #eff6ff; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">Queued</span>
+                `;
+                
+                queuedFilesList.appendChild(fileRow);
+            });
+        });
+    }
+});
+
 function deleteActiveRecord() {
-    if(!confirm("Are you sure you want to permanently purge this agreement from the secure archive?")) return;
+    if(!confirm("Are you sure you want to permanently delete this agreement from the secure archive?")) return;
     
     const id = document.getElementById('edit_id').value;
     const fd = new FormData();

@@ -530,6 +530,42 @@ switch ($action) {
         }
         break;
 
+        case 'remove_payment_file':
+        try {
+            $id = intval($_POST['id'] ?? 0);
+            $fileIndex = intval($_POST['file_index'] ?? -1);
+
+            // 1. Fetch current paths array list from database
+            $stmt = $pdo->prepare("SELECT file_attachment_path FROM payments WHERE id = ?");
+            $stmt->execute([$id]);
+            $currentPathsRaw = $stmt->fetchColumn();
+            
+            $pathsArray = [];
+            if ($currentPathsRaw) {
+                $pathsArray = json_encode(json_decode($currentPathsRaw, true) ?? []);
+                $pathsArray = is_array(json_decode($currentPathsRaw, true)) ? json_decode($currentPathsRaw, true) : [];
+            }
+
+            // 2. Splice targets out out of matching collection array map if within bounds
+            if (isset($pathsArray[$fileIndex])) {
+                // Optional: You can unlink() the physical file asset from the disk location here if required
+                unset($pathsArray[$fileIndex]);
+                $pathsArray = array_values($pathsArray); // Re-index array sequence cleanly
+            }
+
+            // 3. Save clean structural formatting layers directly to row metrics database
+            $cleanJsonPaths = json_encode($pathsArray, JSON_UNESCAPED_SLASHES);
+            $updateStmt = $pdo->prepare("UPDATE payments SET file_attachment_path = ? WHERE id = ?");
+            $updateStmt->execute([$cleanJsonPaths, $id]);
+
+            echo json_encode(['success' => true, 'message' => 'Attachment detached successfully.']);
+            exit;
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            exit;
+        }
+        break;
+
     /* ==========================================================================
        Admin User Management
        ========================================================================== */
@@ -863,8 +899,16 @@ switch ($action) {
             $pendingAgreementsCount = $pdo->query("SELECT COUNT(*) FROM agreements WHERE initial_status = 'Pending' {$compQueryPart}")->fetchColumn();
             $casesRenewalCount = $pdo->query("SELECT COUNT(*) FROM court_cases WHERE case_status IN ('Filing Stage', 'In Progress') {$compQueryPart}")->fetchColumn();
 
-            $nextHearingRaw = $pdo->query("SELECT next_hearing_date FROM court_cases WHERE next_hearing_date >= CURDATE() {$compQueryPart} ORDER BY next_hearing_date ASC LIMIT 1")->fetchColumn();
-            $nextHearingDate = $nextHearingRaw ? date('F d', strtotime($nextHearingRaw)) : 'None Scheduled';
+            $stmtNextHearingAjax = $pdo->query("SELECT next_hearing_date, case_parties FROM court_cases WHERE next_hearing_date >= CURDATE() {$compQueryPart} ORDER BY next_hearing_date ASC LIMIT 1");
+            $nextHearingAjaxRow = $stmtNextHearingAjax->fetch(PDO::FETCH_ASSOC);
+
+            if ($nextHearingAjaxRow) {
+                $nextHearingDate = date('F d', strtotime($nextHearingAjaxRow['next_hearing_date']));
+                $nextHearingCase = htmlspecialchars($nextHearingAjaxRow['case_parties']);
+            } else {
+                $nextHearingDate = 'None Scheduled';
+                $nextHearingCase = 'Clear schedule';
+            }
 
             $awaitingEcfAmount = $pdo->query("SELECT SUM(amount) FROM payments WHERE (ecf_ref_number IS NULL OR ecf_ref_number = '') " . ($companyId ? " AND id IN (SELECT id FROM agreements WHERE group_company_id={$companyId}) " : ""))->fetchColumn() ?: 0.00;
             // --- FETCH FILTERED DATA ARRAYS ---
@@ -921,27 +965,56 @@ switch ($action) {
                 });
             }
 
-            // --- GENERATE HTML STRING LAYOUT OUTPUTS ---
+// --- GENERATE HTML STRING LAYOUT OUTPUTS ---
             ob_start();
             ?>
-            <!-- Zone 1: Top Stats Cards -->
+            <!-- Zone 1: Top Stats Cards (Fixed to retain clear sub-headings after filtering triggers) -->
             <div class="health-cards-matrix" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
-                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
-                    <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">Active Contracts</div>
-                    <div style="font-size: 32px; font-weight: 800; color: #1e293b; margin-top: 8px;"><?php echo $totalActiveAgreements; ?></div>
+                
+                <!-- 1. Active Contracts Card -->
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Contracts</div>
+                        <div style="font-size: 32px; font-weight: 800; color: #1e293b; margin-top: 6px; line-height: 1;"><?php echo $totalActiveAgreements; ?></div>
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 10px; border-top: 1px solid #f1f5f9; padding-top: 8px; line-height: 1.4;">
+                        Live, signed corporate deals running right now.
+                    </div>
                 </div>
-                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
-                    <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">Finished Cases</div>
-                    <div style="font-size: 32px; font-weight: 800; color: #0f766e; margin-top: 8px;"><?php echo $disputeResolutionRate; ?>%</div>
+                
+                <!-- 2. Finished Cases Card -->
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Finished Cases</div>
+                        <div style="font-size: 32px; font-weight: 800; color: #0f766e; margin-top: 6px; line-height: 1;"><?php echo $disputeResolutionRate; ?>%</div>
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 10px; border-top: 1px solid #f1f5f9; padding-top: 8px; line-height: 1.4;">
+                        Percentage of legal disputes successfully resolved and closed.
+                    </div>
                 </div>
-                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
-                    <div style="font-size: 12px; font-weight: 700; color: #ea580c; text-transform: uppercase;">Needs Code ID</div>
-                    <div style="font-size: 32px; font-weight: 800; color: #ea580c; margin-top: 8px;"><?php echo $awaitingPaInitialization; ?></div>
+                
+                <!-- 3. Needs PA Number Card -->
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 700; color: #ea580c; text-transform: uppercase; letter-spacing: 0.5px;">Needs PA Number</div>
+                        <div style="font-size: 32px; font-weight: 800; color: #ea580c; margin-top: 6px; line-height: 1;"><?php echo $awaitingPaInitialization; ?></div>
+                    </div>
+                    <div style="font-size: 11px; color: #a24415; margin-top: 10px; border-top: 1px solid #ffedd5; padding-top: 8px; line-height: 1.4;">
+                        Items missing required procurement tracking numbers.
+                    </div>
                 </div>
-                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
-                    <div style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">Filing Match</div>
-                    <div style="font-size: 32px; font-weight: 800; color: #16a34a; margin-top: 8px;"><?php echo $archiveMatchRate; ?>%</div>
+                
+                <!-- 4. Filing Match Card -->
+                <div class="metric-card-block" style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Filing Match</div>
+                        <div style="font-size: 32px; font-weight: 800; color: #16a34a; margin-top: 6px; line-height: 1;"><?php echo $archiveMatchRate; ?>%</div>
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 10px; border-top: 1px solid #f1f5f9; padding-top: 8px; line-height: 1.4;">
+                        Digital agreements successfully stored in physical office cabinets.
+                    </div>
                 </div>
+                
             </div>
             <!-- Zone 2: Task Agenda -->
             <div style="background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 24px;">
@@ -973,30 +1046,65 @@ switch ($action) {
                 </div>
             </div>
             <?php
+
             $leftPanelHtml = ob_get_clean();
 
             ob_start();
             ?>
-            <!-- Backlog Metrics -->
+            <!-- Backlog Metrics (Fixed to include short description blocks and dynamic case subtitles) -->
             <div>
                 <h3 style="font-size: 13px; font-weight: 700; color: #0f172a; margin: 0 0 16px 0; text-transform: uppercase;">Total Backlog</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <div style="font-size: 28px; font-weight: 800; color: #1e293b; line-height: 1;"><?php echo $pendingAgreementsCount; ?></div>
-                        <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Pending Drafts</div>
+                    
+                    <!-- 1. Pending Drafts Card -->
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="font-size: 28px; font-weight: 800; color: #1e293b; line-height: 1;"><?php echo $pendingAgreementsCount; ?></div>
+                            <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Pending Drafts</div>
+                        </div>
+                        <div style="font-size: 10px; color: #64748b; margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px; line-height: 1.3;">
+                            Contracts currently being written or edited that aren't officially signed yet.
+                        </div>
                     </div>
-                    <div style="background: #fff7ed; padding: 16px; border-radius: 8px; border: 1px solid #ffedd5;">
-                        <div style="font-size: 28px; font-weight: 800; color: #c2410c; line-height: 1;"><?php echo $casesRenewalCount; ?></div>
-                        <div style="font-size: 11px; font-weight: 600; color: #c2410c; margin-top: 6px;">Open Cases</div>
+                    
+                    <!-- 2. Open Cases Card -->
+                    <div style="background: #fff7ed; padding: 16px; border-radius: 8px; border: 1px solid #ffedd5; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="font-size: 28px; font-weight: 800; color: #c2410c; line-height: 1;"><?php echo $casesRenewalCount; ?></div>
+                            <div style="font-size: 11px; font-weight: 600; color: #c2410c; margin-top: 6px;">Open Cases</div>
+                        </div>
+                        <div style="font-size: 10px; color: #a24415; margin-top: 8px; border-top: 1px solid #fed7aa; padding-top: 6px; line-height: 1.3;">
+                            Active, unresolved disputes currently moving through the court system.
+                        </div>
                     </div>
-                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <div style="font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.2;"><?php echo $nextHearingDate; ?></div>
-                        <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Next Hearing</div>
+                    
+                    <!-- 3. Next Hearing Card -->
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.2; min-height: 28px; display: flex; align-items: center;"><?php echo $nextHearingDate; ?></div>
+                            <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 4px;">Next Hearing</div>
+                            
+                            <!-- Dynamic Case Identifier -->
+                            <div style="font-size: 12px; font-weight: 700; color: #475569; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px;" title="<?php echo $nextHearingCase; ?>">
+                                ⚖ <?php echo $nextHearingCase; ?>
+                            </div>
+                        </div>
+                        <div style="font-size: 10px; color: #64748b; margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px; line-height: 1.3;">
+                            The very next urgent calendar date our legal team must appear in court.
+                        </div>
                     </div>
-                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <div style="font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.2;">Rs. <?php echo number_format($awaitingEcfAmount, 0); ?></div>
-                        <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Open Payments</div>
+                    
+                    <!-- 4. Open Payments Card -->
+                    <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.2; min-height: 28px; display: flex; align-items: center;">Rs. <?php echo number_format($awaitingEcfAmount, 0); ?></div>
+                            <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-top: 6px;">Open Payments</div>
+                        </div>
+                        <div style="font-size: 10px; color: #64748b; margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px; line-height: 1.3;">
+                            Payouts currently blocked or frozen because they are missing an ECF tracking code.
+                        </div>
                     </div>
+                    
                 </div>
             </div>
             <!-- Active Litigation List -->

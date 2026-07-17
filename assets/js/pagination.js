@@ -207,9 +207,9 @@ case 'agreements': {
                 }
             } catch(e) { console.error("File parse error", e); }
 
-            return `<tr id="agreement-row-${r.id || ''}">
-                <td class="title-meta-cell" style="cursor: pointer;" onclick="openDetailDrawer(${r.id || 0})">
-                    <div class="primary-line" style="color: var(--primary-brand); font-weight: 700; text-decoration: underline;">${r.title || ''}</div>
+            return `<tr id="agreement-row-${r.id || ''}" onclick="openDetailDrawer(${r.id || 0})"style="cursor: pointer;">
+                <td class="title-meta-cell" style="cursor: pointer;" >
+                    <div class="primary-line" style="color: var(--primary-brand); font-weight: 700; ">${r.title || ''}</div>
                     <div class="secondary-sub">${r.company_name || ''} <span>| Party B: ${r.party_b || ''}</span></div>
                 </td>
                 <td><span class="text-data-regular">${r.category_name || ''}</span></td>
