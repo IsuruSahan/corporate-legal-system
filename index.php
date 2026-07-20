@@ -1,6 +1,18 @@
 <?php
+// Initialize safe application session context
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/config/auth.php';
+
+// CRITICAL FIX: Closed the open condition statement cleanly before setting parameters
+if (!isset($_SESSION['user_id'])) {
+    // Force redirect unauthenticated web traffic back to the secure entry gateway screen
+    header("Location: " . BASE_URL . "login.php");
+    exit;
+}
 
 $page_title = "Dashboard";
 require_once __DIR__ . '/includes/header.php';
@@ -262,7 +274,7 @@ $companiesLookup = $pdo->query("SELECT * FROM group_companies ORDER BY company_n
             <h3 style="font-size: 13px; font-weight: 700; color: #64748b; margin: 0 0 12px 0; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Active Cases</h3>
             <div class="feed-list" style="display: flex; flex-direction: column; gap: 14px;">
                 <?php foreach ($activeLitigations as $lit): ?>
-                    <a href="/corporate-legal-system/court-cases/index.php" style="text-decoration: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;" class="dashboard-feed-row">
+                    <a href="<?php echo BASE_URL; ?>court-cases/index.php" style="text-decoration: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;" class="dashboard-feed-row">
                         <div style="max-width: 280px;">
                             <div style="font-size: 13px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?php echo htmlspecialchars($lit['case_parties']); ?></div>
                             <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
@@ -280,7 +292,7 @@ $companiesLookup = $pdo->query("SELECT * FROM group_companies ORDER BY company_n
             <h3 style="font-size: 13px; font-weight: 700; color: #64748b; margin: 0 0 12px 0; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Recent Agreements</h3>
             <div class="feed-list" style="display: flex; flex-direction: column; gap: 14px;">
                 <?php foreach ($linkedAgreements as $agr): ?>
-                    <a href="/corporate-legal-system/agreements/index.php" style="text-decoration: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+                    <a href="<?php echo BASE_URL; ?>agreements/index.php" style="text-decoration: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
                         <div style="max-width: 280px;">
                             <div style="font-size: 13px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?php echo htmlspecialchars($agr['title']); ?></div>
                             <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
@@ -355,10 +367,12 @@ function openAgendaDrawer() {
     container.innerHTML = '<p style="text-align: center; color: #64748b; font-size: 13px; font-weight: 600; padding-top: 20px;">Fetching all pending system alerts...</p>';
     overlay.style.display = 'flex';
 
-    const fd = new FormData();
+const fd = new FormData();
     fd.append('action', 'fetch_all_agenda_tasks');
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : 'config/router.php';
+
+    fetch(endpoint, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(res => {
         if (res.success && res.data.length > 0) {
@@ -431,7 +445,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('dynamicLeftWorkspace').style.opacity = '0.5';
         document.getElementById('dynamicRightWorkspace').style.opacity = '0.5';
 
-        fetch('/corporate-legal-system/config/router.php', {
+        const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : 'config/router.php';
+
+        fetch(endpoint, {
             method: 'POST',
             body: fd
         })
@@ -463,4 +479,3 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
 
-<?php require_once __DIR__ . '/includes/footer.php'; ?>

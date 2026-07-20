@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
 
-$page_title = "Physical Archives & Vault Mapping";
+$page_title = "Physical Archives Management";
 $breadcrumb = "ARCHIVES / PHYSICAL LEDGER";
 require_once __DIR__ . '/../includes/header.php';
 
@@ -48,9 +48,9 @@ $cabinets = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locatio
 <form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; align-items: center; background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
     
     <!-- 1. Text Search Input Field -->
-    <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
+    <!-- <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
         <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search Cabinet ID, Shelf, Box code..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
-    </div>
+    </div> -->
 
     <!-- 2. Corporate Entity Dropdown Filter -->
     <div style="margin-bottom: 0;">

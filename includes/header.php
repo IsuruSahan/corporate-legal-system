@@ -3,11 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=1440, initial-scale=1.0">
-    <title><?php echo isset($page_title) ? $page_title . " | BenLegal" : "BenLegal Engine"; ?></title>
-    <!-- Hardcode absolute root routing path for assets to completely bypass dynamic string bugs -->
-    <link rel="stylesheet" href="/corporate-legal-system/assets/css/style.css">
-    <!-- Use a leading slash to ensure it always references /corporate-legal-system/ from the root -->
-<script src="/corporate-legal-system/assets/js/pagination.js"></script>
+    <title><?php echo isset($page_title) ? $page_title . " | Legal" : "Legal Portal"; ?></title>
+
+    <!-- Global JS Constant for API endpoints -->
+    <script>
+        const BASE_URL = "<?php echo BASE_URL; ?>";
+    </script>
+
+    <!-- Absolute root routing paths for assets -->
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/style.css">
+    <script src="<?php echo BASE_URL; ?>assets/js/pagination.js?v=<?php echo time(); ?>"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/app.js?v=<?php echo time(); ?>"></script>
 </head>
 <body>
 <div class="app-container">

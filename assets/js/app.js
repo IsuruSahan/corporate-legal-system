@@ -30,10 +30,17 @@ document.addEventListener("DOMContentLoaded", function () {
             dropzone.addEventListener(eventName, () => dropzone.classList.remove('highlight'), false);
         });
 
-        dropzone.addEventListener('drop', e => {
+            dropzone.addEventListener('drop', e => {
             const dt = e.dataTransfer;
             const files = dt.files;
-            if (files.length) console.log("File detected and staged for processing: ", files[0].name);
+            if (files.length) {
+                const fileInput = dropzone.querySelector('input[type="file"]') || document.querySelector('input[type="file"]');
+                if (fileInput) {
+                    fileInput.files = files;
+                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                console.log("File detected and staged for processing: ", files[0].name);
+            }
         });
     }
 });
@@ -60,5 +67,17 @@ function showSystemModal(title, text, type = 'success') {
 }
 
 function closeSystemModal() {
-    document.getElementById('systemModal').classList.remove('active');
+    const modal = document.getElementById('systemModal');
+    if (modal) modal.classList.remove('active');
+}
+
+/**
+ * Universal System Endpoint Dispatcher
+ * Constructs absolute API paths using BASE_URL dynamically
+ */
+function getApiEndpoint(action = 'router.php') {
+    if (typeof BASE_URL !== 'undefined') {
+        return BASE_URL + 'config/' + action;
+    }
+    return '../config/' + action;
 }

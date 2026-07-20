@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/auth.php';
-$page_title = "Payment Milestone Ledger";
+$page_title = "Payment Management";
 $breadcrumb = "PAYMENTS / WORKSPACE";
 require_once __DIR__ . '/../includes/header.php';
 
@@ -22,9 +22,9 @@ $court_cases = $pdo->query("SELECT id, case_number FROM court_cases ORDER BY cas
 <form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; align-items: center; background: var(--surface-white); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
     
     <!-- 1. Text Search Input (Description / Details) -->
-    <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
+    <!-- <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
         <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search by payment details, description..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
-    </div>
+    </div> -->
 
     <!-- 2. PA REFERENCE Search Input -->
     <div class="search-wrapper-input" style="width: 150px; margin-bottom: 0;">
@@ -216,7 +216,9 @@ function openDetailDrawer(id) {
     fd.append('action', 'get_payment'); 
     fd.append('id', id);
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+    fetch(endpoint, { method: 'POST', body: fd })
     .then(r => r.json())
     .then(res => {
         if (res.success) {
@@ -296,9 +298,10 @@ function openDetailDrawer(id) {
                     fileRow.style.alignItems = 'center';
                     fileRow.style.gap = '8px';
                     
+                    const rootPath = (typeof BASE_URL !== 'undefined') ? BASE_URL : '../';
                     fileRow.innerHTML = `
                         <span>📄</span> 
-                        <a href="..${safePath}" target="_blank" style="text-decoration: none; color: var(--primary-brand); font-weight: 600;">${htmlspecialchars_js(fileName)}</a>
+                        <a href="${rootPath}${safePath.replace(/^\//, '')}" target="_blank" style="text-decoration: none; color: var(--primary-brand); font-weight: 600;">${htmlspecialchars_js(fileName)}</a>
                     `;
                     
                     const deleteBtn = document.createElement('button');
@@ -350,7 +353,9 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
-    fetch('/corporate-legal-system/config/router.php', {
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+    fetch(endpoint, {
         method: 'POST',
         body: new FormData(this)
     })
@@ -368,10 +373,15 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
     });
 });
 
-    function deleteActiveRecord() {
+function deleteActiveRecord() {
         if(!confirm("Are you sure?")) return;
-        const fd = new FormData(); fd.append('action', 'delete_payment'); fd.append('id', document.getElementById('edit_id').value);
-        fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd }).then(() => window.location.reload());
+        const fd = new FormData(); 
+        fd.append('action', 'delete_payment'); 
+        fd.append('id', document.getElementById('edit_id').value);
+
+        const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+        fetch(endpoint, { method: 'POST', body: fd }).then(() => window.location.reload());
     }
 
 function removePaymentFile(id, index) {
@@ -382,7 +392,9 @@ function removePaymentFile(id, index) {
         fd.append('id', id); 
         fd.append('file_index', index);
         
-        fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+        const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+        fetch(endpoint, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {
             console.log("Payment file extraction execution payload:", data);

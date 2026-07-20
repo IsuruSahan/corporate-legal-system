@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BenLegal Access Portal</title>
-    <link rel="stylesheet" href="/corporate-legal-system/assets/css/style.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/style.css">
     <style>
         /* Standalone overlay workspace layout alignment rules */
         .login-frame-container {
@@ -81,14 +81,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 16px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
         }
+        .brand-logo-display {
+            display: block;
+            max-width: 150px;
+            height: auto;
+            margin: 0 auto 4px auto; /* Reduced bottom margin from 16px to 4px */
+            object-fit: contain;
+        }
     </style>
 </head>
 <body>
 
 <div class="login-frame-container">
     <div class="login-card-shield">
-        <div style="font-size: 26px; font-weight: 700; color: var(--primary-brand); margin-bottom: 6px; text-align: center;">BenLegal</div>
-        <div style="font-size: 13px; color: var(--text-muted); font-weight: 500; text-align: center; margin-bottom: 32px;">Corporate Records Security Gateway</div>
+        <!-- 1. Corporate Brand Logo Integration Vector Container -->
+<img src="<?php echo BASE_URL; ?>assets/images/benlogo.png" alt="Ben Holdings Logo" class="brand-logo-display">        
+        <!-- 2. System Branding Title Refactored Matrix -->
+        <div style="font-size: 26px; font-weight: 700; color: var(--primary-brand); margin-bottom: 6px; text-align: center;">LEGAL</div>
+        <div style="font-size: 13px; color: var(--text-muted); font-weight: 500; text-align: center; margin-bottom: 32px;">Authentication</div>
 
         <?php if (!empty($error)): ?>
             <div style="background: var(--bg-unlinked); color: var(--text-unlinked); padding: 12px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 20px; line-height: 1.4; text-align: left;">
@@ -98,17 +108,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <form action="" method="POST" autocomplete="off">
             <div class="form-group-row">
-                <label class="field-label-text">Corporate Email ID</label>
+                <label class="field-label-text">Email ID</label>
                 <input type="email" name="email" class="form-field-input" style="height: 40px;" placeholder="name@benholdings.com" required>
             </div>
 
             <div class="form-group-row" style="margin-bottom: 32px;">
-                <label class="field-label-text">Access Password</label>
+                <label class="field-label-text">Password</label>
                 <input type="password" name="password" class="form-field-input" style="height: 40px;" placeholder="••••••••••••" required>
             </div>
 
             <button type="submit" class="btn btn-primary btn-tall" style="width: 100%; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; height: 42px;">
-                Request Token Clearance
+                Login
             </button>
         </form>
     </div>

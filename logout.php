@@ -1,22 +1,40 @@
 <?php
-// Initialize session state context safely before any data manipulation
+// 1. Load config FIRST to ensure BASE_URL is defined
+require_once __DIR__ . '/config/database.php';
+
+// 2. Initialize session state context safely
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// 1. Establish the explicit intent flag BEFORE flushing profile tokens
+// 3. Clear operational permissions variables (except explicit_logout flag if needed)
+$_SESSION = array();
+
+// Set the explicit logout flag AFTER clearing the array so it actually persists
 $_SESSION['explicit_logout'] = true;
 
-// 2. Clear out all operational permissions variables completely
-unset($_SESSION['user_id']);
-unset($_SESSION['user_name']);
-unset($_SESSION['user_email']);
-unset($_SESSION['user_role']);
+// 4. Wipe active tracking cookie out of browser memory
+if (ini_get("session.use_cookies")) {
+    $params = session_get_cookie_params();
+    setcookie(
+        session_name(), 
+        '', 
+        time() - 42000,
+        $params["path"], 
+        $params["domain"],
+        $params["secure"], 
+        $params["httponly"]
+    );
+}
 
-// 3. Force-save the session state modifications right now
-session_write_close();
+// 5. Destroy active server data channel execution
+session_destroy();
 
-// 4. Hard direct forward to the login entry gateway
-header("Location: /corporate-legal-system/login.php");
+// 6. Kill browser history cache blocks instantly
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
+
+// 7. Hard direct forward to login entry gateway
+header("Location: " . BASE_URL . "login.php");
 exit;
-?>

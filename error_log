@@ -1,0 +1,27 @@
+[17-Jul-2026 08:58:13 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 08:59:06 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 08:59:07 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 08:59:07 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 08:59:07 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 08:59:08 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 09:00:19 UTC] PHP Parse error:  Unclosed '{' on line 3 in /home/monara/public_html/corporate-legal-system/index.php on line 472
+[17-Jul-2026 09:01:52 UTC] PHP Fatal error:  Uncaught Error: Undefined constant "BASE_URL" in /home/monara/public_html/corporate-legal-system/config/database.php:5
+Stack trace:
+#0 /home/monara/public_html/corporate-legal-system/index.php(7): require_once()
+#1 {main}
+  thrown in /home/monara/public_html/corporate-legal-system/config/database.php on line 5
+[17-Jul-2026 09:01:54 UTC] PHP Fatal error:  Uncaught Error: Undefined constant "BASE_URL" in /home/monara/public_html/corporate-legal-system/config/database.php:5
+Stack trace:
+#0 /home/monara/public_html/corporate-legal-system/index.php(7): require_once()
+#1 {main}
+  thrown in /home/monara/public_html/corporate-legal-system/config/database.php on line 5
+[17-Jul-2026 09:01:54 UTC] PHP Fatal error:  Uncaught Error: Undefined constant "BASE_URL" in /home/monara/public_html/corporate-legal-system/config/database.php:5
+Stack trace:
+#0 /home/monara/public_html/corporate-legal-system/index.php(7): require_once()
+#1 {main}
+  thrown in /home/monara/public_html/corporate-legal-system/config/database.php on line 5
+[17-Jul-2026 09:01:55 UTC] PHP Fatal error:  Uncaught Error: Undefined constant "BASE_URL" in /home/monara/public_html/corporate-legal-system/config/database.php:5
+Stack trace:
+#0 /home/monara/public_html/corporate-legal-system/index.php(7): require_once()
+#1 {main}
+  thrown in /home/monara/public_html/corporate-legal-system/config/database.php on line 5

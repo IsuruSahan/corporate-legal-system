@@ -1,8 +1,6 @@
 </div> <!-- /main-workspace -->
 </div> <!-- /app-container -->
 
-
-
 <!-- Global System Notification Modal Engine Scaffolding -->
 <div id="systemModal" class="modal-overlay">
     <div class="modal-box">
@@ -13,10 +11,6 @@
     </div>
 </div>
 
-<script src="/corporate-legal-system/assets/js/app.js"></script>
-</body>
-</html>
-
-<script src="/corporate-legal-system/assets/js/app.js"></script>
+<script src="<?php echo BASE_URL; ?>assets/js/app.js"></script>
 </body>
 </html>

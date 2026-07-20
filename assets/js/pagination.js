@@ -1,5 +1,4 @@
 // A global state object to keep track of pages for different tables
-// A global state object to keep track of pages for different tables
 const paginationState = {};
 
 function initPagination(table, containerId) {
@@ -53,6 +52,7 @@ function paginate(table, containerId, pageNumber) {
     // Litigation (Court Cases) specific parameters
     const activeCourtFilter    = urlParams.get('court') || '';
     const activeCaseNumFilter  = urlParams.get('case_number') || '';
+
     // Payment specific URL filters
     const activePaRefFilter    = urlParams.get('pa_ref') || '';
     const activeEcfRefFilter   = urlParams.get('ecf_ref') || '';
@@ -68,7 +68,7 @@ function paginate(table, containerId, pageNumber) {
     fd.append('table', table);
     fd.append('page', newPage);
 
-// 1. Map global entity and structural filters
+    // 1. Map global entity and structural filters
     if (activeEntityFilter)   fd.append('group_company_id', activeEntityFilter);
     if (activeOfficerFilter)  fd.append('assigned_officer_id', activeOfficerFilter);
     if (activeSearchFilter)   fd.append('search_term', activeSearchFilter);
@@ -87,6 +87,7 @@ function paginate(table, containerId, pageNumber) {
     // 3. Map Litigation context variables accurately depending on routing paths
     if (activeCourtFilter)    fd.append('court_id', activeCourtFilter);
     if (activeCaseNumFilter)  fd.append('case_number', activeCaseNumFilter);
+
     // Map Payment modular payload variants
     if (activePaRefFilter)  fd.append('pa_ref_number', activePaRefFilter);
     if (activeEcfRefFilter) fd.append('ecf_ref_number', activeEcfRefFilter);
@@ -101,33 +102,39 @@ function paginate(table, containerId, pageNumber) {
         }
     }
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
-    .then(r => r.json())
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+    fetch(endpoint, { method: 'POST', body: fd })
+    .then(async r => {
+        const rawText = await r.text();
+        try {
+            return JSON.parse(rawText);
+        } catch (e) {
+            console.error("❌ Failed to parse JSON response:", rawText);
+            return { success: false, data: [] };
+        }
+    })
     .then(res => {
         const body = document.getElementById(containerId);
-        
-        if (res.success && res.data.length > 0) {
-            // Update structural page states only when valid rows return
+        if (!body) return;
+
+        if (res.success && res.data && res.data.length > 0) {
             paginationState[containerId] = newPage; 
-            document.getElementById(`page-${containerId}`).textContent = `Page ${newPage}`;
+            const pageEl = document.getElementById(`page-${containerId}`);
+            if (pageEl) pageEl.textContent = `Page ${newPage}`;
             
             body.innerHTML = ''; 
             res.data.forEach(row => {
                 body.innerHTML += renderRow(table, row);
             });
         } else {
-            alert("No more records to display.");
-            // If the initial page request (page 1) comes back completely empty due to strict filtering filters
             if (newPage === 1) {
                 body.innerHTML = '<tr><td colspan="100%" style="text-align: center; padding: 20px; color: #64748b;">No matching records found.</td></tr>';
             }
         }
     })
-    .catch(err => console.error("Pagination networking processing failure:", err));
+    .catch(err => console.error("❌ Pagination processing error:", err));
 }
-
-// [ Centralized Renderer Function Switch remains exactly as you wrote it ]
-
 
 // Centralized Renderer
 function renderRow(table, r) {
@@ -144,8 +151,9 @@ function renderRow(table, r) {
             try {
                 let files = JSON.parse(r.file_attachment_path || '[]');
                 if (Array.isArray(files) && files.length > 0) {
+                    const rootPath = (typeof BASE_URL !== 'undefined') ? BASE_URL : '../';
                     fileHtmlCourt = files.map(path => `
-                        <a href="../${path.replace(/^\//, '')}" target="_blank" 
+                        <a href="${rootPath}${path.replace(/^\//, '')}" target="_blank" 
                            class="file-link-trigger active" 
                            style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">📁</a>
                     `).join('');
@@ -173,7 +181,7 @@ function renderRow(table, r) {
                 <td><span class="status-badge ${badge}" style="font-weight: 700;">${st}</span></td>
                 <td style="text-align: center;">${fileHtmlCourt}</td>
             </tr>`;
-        } // End court_cases
+        }
 
         case 'audit_logs': {
             let logBadge = 'pending';
@@ -193,23 +201,23 @@ function renderRow(table, r) {
                     <div style="font-size: 13px; font-weight: 500; color: var(--text-muted); line-height: 1.4;">${r.meta_description} <span style="font-size: 11px; color: var(--text-light); font-family: monospace; margin-left: 6px;">(Ref ID: #${r.record_id})</span></div>
                 </td>
             </tr>`;
-        } // End audit_logs
+        }
 
-case 'agreements': {
+        case 'agreements': {
             let fileHtmlAgree = '<span class="file-link-trigger none" style="color: #ccc; font-style: italic;">None</span>';
             try {
                 let files = JSON.parse(r.file_attachment_path || '[]');
                 if (Array.isArray(files) && files.length > 0) {
-                    // Clean asset path trailing calculation logic maps smoothly
+                    const rootPath = (typeof BASE_URL !== 'undefined') ? BASE_URL : '../';
                     fileHtmlAgree = files.map(path => `
-                        <a href="..${path}" target="_blank" class="file-link-trigger active" style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">📁</a>
+                        <a href="${rootPath}${path.replace(/^\//, '')}" target="_blank" class="file-link-trigger active" style="color: var(--primary-brand); text-decoration: none; font-weight: 600; margin-right: 5px;">📁</a>
                     `).join('');
                 }
             } catch(e) { console.error("File parse error", e); }
 
-            return `<tr id="agreement-row-${r.id || ''}" onclick="openDetailDrawer(${r.id || 0})"style="cursor: pointer;">
-                <td class="title-meta-cell" style="cursor: pointer;" >
-                    <div class="primary-line" style="color: var(--primary-brand); font-weight: 700; ">${r.title || ''}</div>
+            return `<tr id="agreement-row-${r.id || ''}" onclick="openDetailDrawer(${r.id || 0})" style="cursor: pointer;">
+                <td class="title-meta-cell" style="cursor: pointer;">
+                    <div class="primary-line" style="color: var(--primary-brand); font-weight: 700;">${r.title || ''}</div>
                     <div class="secondary-sub">${r.company_name || ''} <span>| Party B: ${r.party_b || ''}</span></div>
                 </td>
                 <td><span class="text-data-regular">${r.category_name || ''}</span></td>
@@ -219,28 +227,26 @@ case 'agreements': {
                 <td><span class="status-badge ${(r.initial_status || '').toLowerCase()}">${r.initial_status || ''}</span></td>
                 <td>${fileHtmlAgree}</td>
             </tr>`;
-        } // End agreements
+        }
 
         case 'payments': {
-    // Determine status badge class based on the 'status' column
-    let statusClass = (r.status === 'Linked') ? 'linked' : 'error';
-    let displayStatus = (r.status === 'Linked') ? 'Linked' : 'Unlinked ECF';
+            let statusClass = (r.status === 'Linked') ? 'linked' : 'error';
+            let displayStatus = (r.status === 'Linked') ? 'Linked' : 'Unlinked ECF';
 
-    return `<tr id="payment-row-${r.id}" onclick="openDetailDrawer(${r.id})" style="cursor: pointer;">
-        <td>
-            <div class="primary-line" style="font-weight: 700; color: var(--text-dark);">${r.description || ''}</div>
-            <div style="font-size: 12px; color: var(--text-light);">${r.company_name || ''} | Linked Source: ${r.source_type || 'N/A'} (#${r.linked_source_id || '0'})</div>
-        </td>
-        <td>${r.pa_ref_number || '<span style="color:red;">[ No Input ]</span>'}</td>
-        <td>${r.ecf_ref_number || '<span style="color:red;">[ No Input ]</span>'}</td>
-        <td>${r.due_date ? new Date(r.due_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : ''}</td>
-        <td style="font-weight: 700;">${r.currency || 'Rs.'} ${parseFloat(r.amount || 0).toLocaleString()}</td>
-        <td><span class="status-badge ${statusClass}" style="font-weight: 700;">${displayStatus}</span></td>
-    </tr>`;
-}
+            return `<tr id="payment-row-${r.id}" onclick="openDetailDrawer(${r.id})" style="cursor: pointer;">
+                <td>
+                    <div class="primary-line" style="font-weight: 700; color: var(--text-dark);">${r.description || ''}</div>
+                    <div style="font-size: 12px; color: var(--text-light);">${r.company_name || ''} | Linked Source: ${r.source_type || 'N/A'} (#${r.linked_source_id || '0'})</div>
+                </td>
+                <td>${r.pa_ref_number || '<span style="color:red;">[ No Input ]</span>'}</td>
+                <td>${r.ecf_ref_number || '<span style="color:red;">[ No Input ]</span>'}</td>
+                <td>${r.due_date ? new Date(r.due_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : ''}</td>
+                <td style="font-weight: 700;">${r.currency || 'Rs.'} ${parseFloat(r.amount || 0).toLocaleString()}</td>
+                <td><span class="status-badge ${statusClass}" style="font-weight: 700;">${displayStatus}</span></td>
+            </tr>`;
+        }
 
-case 'physical_archives_master': {
-            // Check raw file attachment contents for valid paths, avoiding blank configurations
+        case 'physical_archives_master': {
             let fileData = r.raw_file_field;
             let hasScan = (fileData && fileData !== '[]' && fileData !== 'null' && fileData !== '');
             

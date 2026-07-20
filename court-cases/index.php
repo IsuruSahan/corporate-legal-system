@@ -5,8 +5,8 @@ require_once __DIR__ . '/../config/auth.php';
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-$page_title = "Court Cases & Litigation Ledger";
-$breadcrumb = "LITIGATION / OVERVIEW";
+$page_title = "Court Cases Management";
+$breadcrumb = "COURT CASES / OVERVIEW";
 require_once __DIR__ . '/../includes/header.php';
 
 // Capture filtering parameter targets from standard URL query string vectors
@@ -15,10 +15,10 @@ $entity_filter = $_GET['entity'] ?? '';
 // Build master database view joining necessary operational relations
 $query = "SELECT cc.*, gc.company_name, cr.room_name, u.full_name as officer_name, cab.cabinet_location, a.title as linked_agreement_title
           FROM court_cases cc
-          JOIN group_companies gc ON cc.group_company_id = gc.id
-          JOIN court_rooms cr ON cc.court_id = cr.id
-          JOIN users u ON cc.assigned_officer_id = u.id
-          JOIN archive_cabinets cab ON cc.cabinet_id = cab.id
+          LEFT JOIN group_companies gc ON cc.group_company_id = gc.id
+          LEFT JOIN court_rooms cr ON cc.court_id = cr.id
+          LEFT JOIN users u ON cc.assigned_officer_id = u.id
+          LEFT JOIN archive_cabinets cab ON cc.cabinet_id = cab.id
           LEFT JOIN agreements a ON cc.linked_agreement_id = a.id";
 
 if (!empty($entity_filter)) {
@@ -36,8 +36,8 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
 ?>
 
 <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
-    <?php if ($_SESSION['user_role'] !== 'Viewer'): ?>
-        <a href="/corporate-legal-system/court-cases/add.php" class="btn btn-primary btn-tall" style="text-decoration: none; font-size: 13px; font-weight: 700;">
+<?php if ($_SESSION['user_role'] !== 'Viewer'): ?>
+        <a href="<?php echo BASE_URL; ?>court-cases/add.php" class="btn btn-primary btn-tall" style="text-decoration: none; font-size: 13px; font-weight: 700;">
             + Create Court case
         </a>
     <?php endif; ?>
@@ -45,9 +45,9 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
 
 <form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; align-items: center; background: var(--surface-white); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color);">
     <!-- 1. Text Search Input (Filters by Case Title / Litigating Parties or Dispute Summary Details) -->
-    <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
+    <!-- <div class="search-wrapper-input" style="flex: 1; min-width: 220px; margin-bottom: 0;">
         <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search by case details, description..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
-    </div>
+    </div> -->
 
     <!-- 2. CASE NUMBER (Explicit match string field) -->
     <div class="search-wrapper-input" style="width: 160px; margin-bottom: 0;">
@@ -117,7 +117,7 @@ $agreements = $pdo->query("SELECT * FROM agreements ORDER BY title ASC")->fetchA
     <div class="side-drawer-panel" onclick="event.stopPropagation()">
         <div class="drawer-header">
             <h2 id="drawerTitle" style="font-size: 16px; font-weight: 700; color: var(--text-dark);">Litigation Management Panel</h2>
-            <span onclick="closeDetailDrawer()" style="cursor: pointer; font-weight: bold; color: var(--text-light); font-size: 18px;">✕</span>
+            <span onclick="closeDetailDrawer()" style="cursor: pointer; font-weight: bold; color: var(--text-light); font-size: 18px;">âœ•</span>
         </div>
 
         <form id="drawerForm" class="view-mode" novalidate>
@@ -305,7 +305,7 @@ const fd = new FormData();
     fd.append('action', 'get_court_case');
     fd.append('id', id);
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    fetch(BASE_URL + 'config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(res => {
         if(res.success) {
@@ -346,13 +346,14 @@ const fileContainer = document.getElementById('drawerFilesContainer');
                 if (files.length > 0) {
                     files.forEach((path, index) => {
                         const fileName = path.split('/').pop();
+                        const cleanPath = path.replace(/^\//, '');
                         fileContainer.innerHTML += `
                             <div class="d-flex align-items-center justify-content-between mb-2 p-2 border rounded">
-                                <a href="..${path}" target="_blank" class="text-decoration-none">
+                                <a href="${BASE_URL}${cleanPath}" target="_blank" class="text-decoration-none">
                                     📄 ${fileName}
                                 </a>
                                 <button type="button" class="btn btn-sm btn-outline-danger" 
-                                        onclick="removeFile(${d.id}, ${index}, 'court_cases')">×</button>
+                                        onclick="removeFile(${d.id}, ${index}, 'court_cases')">Ã—</button>
                             </div>`;
                     });
                 } else {
@@ -421,7 +422,7 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
-    fetch('/corporate-legal-system/config/router.php', {
+    fetch(BASE_URL + 'config/router.php', {
         method: 'POST',
         body: new FormData(this)
     })
@@ -446,7 +447,7 @@ function deleteActiveRecord() {
     fd.append('action', 'delete_court_case'); // Ensure this matches your router.php case
     fd.append('id', id);
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    fetch(BASE_URL + 'config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
         if(data.success) {
@@ -469,7 +470,7 @@ function removeFile(id, index, module) { // Ensure 'module' is passed here
     fd.append('file_index', index);
     fd.append('module', module); // CRITICAL: This links to the PHP $targetTable logic
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    fetch(BASE_URL + 'config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
         console.log("Server Response:", data);
@@ -503,7 +504,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 fileRow.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 8px; color: #334155;">
-                        <span>📎</span>
+                        <span>ðŸ“Ž</span>
                         <span style="font-weight: 600;" title="${file.name}">${fileNameDisplay}</span>
                         <span style="color: #94a3b8; font-size: 11px;">(${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
                     </div>

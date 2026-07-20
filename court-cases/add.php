@@ -128,7 +128,7 @@ $agreements = $pdo->query("SELECT id, title FROM agreements ORDER BY title ASC")
             
 
             <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-color);">
-                <button type="button" class="btn btn-secondary" onclick="window.location.href='/corporate-legal-system/court-cases/index.php'">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="window.location.href='<?php echo BASE_URL; ?>court-cases/index.php'">Cancel</button>
                 <button type="submit" id="submitFormBtn" class="btn btn-primary">Save Case Profile</button>
             </div>
         </form>
@@ -178,7 +178,9 @@ document.getElementById('newCourtCaseForm').addEventListener('submit', function(
     btn.disabled = true;
     btn.textContent = 'Saving Case Entry...';
 
-    fetch('/corporate-legal-system/config/router.php', {
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+    fetch(endpoint, {
         method: 'POST',
         body: new FormData(this)
     })
@@ -186,7 +188,8 @@ document.getElementById('newCourtCaseForm').addEventListener('submit', function(
     .then(data => {
         if(data.success) {
             showSystemModal('Case Profiles Indexed', data.message, 'success');
-            setTimeout(() => window.location.href = '/corporate-legal-system/court-cases/index.php', 1000);
+            const targetRedirect = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'court-cases/index.php' : 'index.php';
+            setTimeout(() => window.location.href = targetRedirect, 1000);
         } else {
             showSystemModal('Transaction Blocked', data.message, 'error');
             btn.disabled = false;

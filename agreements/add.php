@@ -199,7 +199,9 @@ document.getElementById('agreementForm').addEventListener('submit', function(e) 
     saveBtn.textContent = 'Indexing...';
 
     // Broadcast modern multi-part configuration payload using absolute gateway address
-    fetch('/corporate-legal-system/config/router.php', {
+// Broadcast modern multi-part configuration payload using dynamic BASE_URL
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+    fetch(endpoint, {
         method: 'POST',
         body: new FormData(this)
     })

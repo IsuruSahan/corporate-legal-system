@@ -6,18 +6,18 @@ require_once __DIR__ . '/../config/auth.php';
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-$page_title = "Agreements & Contracts Vault";
-$breadcrumb = "AGREEMENTS / ALL RECORDS";
+$page_title = "Agreements Management ";
+$breadcrumb = "AGREEMENTS / OVERVIEW";
 require_once __DIR__ . '/../includes/header.php';
 
 // Fetch agreements ledger
 $entity_filter = $_GET['entity'] ?? '';
 $query = "SELECT a.*, c.company_name, cat.category_name, u.full_name as officer_name, cab.cabinet_location 
           FROM agreements a
-          JOIN group_companies c ON a.group_company_id = c.id
-          JOIN agreement_categories cat ON a.category_id = cat.id
-          JOIN users u ON a.assigned_officer_id = u.id
-          JOIN archive_cabinets cab ON a.cabinet_id = cab.id";
+          LEFT JOIN group_companies c ON a.group_company_id = c.id
+          LEFT JOIN agreement_categories cat ON a.category_id = cat.id
+          LEFT JOIN users u ON a.assigned_officer_id = u.id
+          LEFT JOIN archive_cabinets cab ON a.cabinet_id = cab.id";
 
 if (!empty($entity_filter)) {
     $query .= " WHERE a.group_company_id = " . intval($entity_filter);
@@ -40,9 +40,9 @@ $cabinets   = $pdo->query("SELECT * FROM archive_cabinets ORDER BY cabinet_locat
 
 <form action="" method="GET" class="filtering-sub-bar" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; background: #ffffff; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
     <!-- 1. Text Search Input Field -->
-    <div class="search-wrapper-input" style="flex: 1; min-width: 200px; margin-bottom: 0;">
+    <!-- <div class="search-wrapper-input" style="flex: 1; min-width: 200px; margin-bottom: 0;">
         <input type="text" name="search" id="tableSearchInput" class="form-field-input" placeholder="Search title, party B..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>" style="margin-bottom: 0;">
-    </div>
+    </div> -->
     
     <!-- 2. Group Subsidiary Filter -->
     <div style="margin-bottom: 0;">
@@ -256,7 +256,7 @@ function openDetailDrawer(id) {
     fd.append('action', 'get_agreement');
     fd.append('id', id);
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    fetch(BASE_URL + 'config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(res => {
         if(res.success) {
@@ -353,7 +353,7 @@ document.getElementById('drawerForm').addEventListener('submit', function(e) {
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
-    fetch('/corporate-legal-system/config/router.php', {
+    fetch(BASE_URL + 'config/router.php', {
         method: 'POST',
         body: new FormData(this)
     })
@@ -413,7 +413,7 @@ function deleteActiveRecord() {
     fd.append('action', 'delete_agreement');
     fd.append('id', id);
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    fetch(BASE_URL + 'config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
         if(data.success) {
@@ -433,7 +433,7 @@ function removeFile(id, index) {
     fd.append('id', id);
     fd.append('file_index', index);
 
-    fetch('/corporate-legal-system/config/router.php', { method: 'POST', body: fd })
+    fetch(BASE_URL + 'config/router.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
         if(data.success) {
@@ -445,15 +445,10 @@ function removeFile(id, index) {
     });
 }
 
-// 1. Initialize your standard pagination controls grid framework safely
-    initPagination('agreements', 'data-body-agreements');
-
 // Control workflow execution cleanly inside the browser initialization thread
     document.addEventListener("DOMContentLoaded", function() {
-        // Automatically extract all query string variables from the URL bar state
-        const urlParams = new URLSearchParams(window.location.search);
-        
-        // Use the global centralized pagination engine on page load instead of the missing function
+        // Initialize dynamic pagination engine layers inside DOMContentLoaded
+        initPagination('agreements', 'data-body-agreements');
         paginate('agreements', 'data-body-agreements', 1);
 
         // Bind the text search input element to submit the parent form on 'Enter' keypress

@@ -7,7 +7,7 @@ error_reporting(E_ALL);
 
 // Enforce strict administrative clearance gate
 if ($_SESSION['user_role'] !== 'Admin') {
-    echo '<script>window.location.href="../index.php";</script>';
+    echo '<script>window.location.href="' . BASE_URL . 'index.php";</script>';
     exit;
 }
 
@@ -162,7 +162,9 @@ document.getElementById('asyncUserForm').addEventListener('submit', function(e) 
     btn.disabled = true;
     btn.textContent = 'Creating...';
 
-    fetch('/corporate-legal-system/config/router.php', {
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+    fetch(endpoint, {
         method: 'POST',
         body: new FormData(this)
     })
@@ -179,11 +181,13 @@ document.getElementById('asyncUserForm').addEventListener('submit', function(e) 
     });
 });
 
+
 // Dynamic Attribute Seeding Actions Async Broadcaster
 document.querySelectorAll('.async-config-form').forEach(form => {
     form.addEventListener('submit', function(e) {
         e.preventDefault();
-        fetch('/corporate-legal-system/config/router.php', {
+        const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+        fetch(endpoint, {
             method: 'POST',
             body: new FormData(this)
         })
@@ -206,7 +210,9 @@ function executeDeleteUser(userId) {
     fd.append('action', 'ajax_delete_user');
     fd.append('user_id', userId);
 
-    fetch('/corporate-legal-system/config/router.php', {
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'config/router.php' : '../config/router.php';
+
+    fetch(endpoint, {
         method: 'POST',
         body: fd
     })
