@@ -10,7 +10,11 @@ if ($_SESSION['user_role'] !== 'Admin') {
     echo '<script>window.location.href="' . BASE_URL . 'index.php";</script>';
     exit;
 }
-
+$stmtSetting = $pdo->prepare("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('court_hearing_notice_days', 'court_next_step_notice_days')");
+$stmtSetting->execute();
+$settingsMap = $stmtSetting->fetchAll(PDO::FETCH_KEY_PAIR);
+$noticeDays = $settingsMap['court_hearing_notice_days'] ?? '7';
+$nextStepNoticeDays = $settingsMap['court_next_step_notice_days'] ?? '5';
 $page_title = "Users & System Configuration";
 $breadcrumb = "SYSTEM MANAGEMENT / USERS & CONFIG";
 require_once __DIR__ . '/../includes/header.php';
@@ -150,7 +154,40 @@ $stages = $pdo->query("SELECT * FROM court_rooms ORDER BY id ASC")->fetchAll(); 
             </div>
         </div>
     </div>
+
+    <!-- CARD 2: CALENDAR & COUNTDOWN NOTIFICATION SETTINGS -->
+        <div class="form-panel-card" style="margin-top: 24px;">
+            <h2>Calendar &amp; Notification Lead Times</h2>
+            <p class="form-sub-header-desc">Set lead days to automatically trigger advance email and dashboard alerts for upcoming court milestones.</p>
+
+            <form id="saveSettingsForm">
+                <input type="hidden" name="action" value="save_notification_settings">
+                
+                <!-- Court Hearing Notice Field -->
+                <div class="form-group-row" style="margin-bottom: 16px;">
+                    <label class="field-label-text">COURT HEARING ADVANCE NOTICE (DAYS)</label>
+                    <input type="number" name="court_hearing_notice_days" class="form-field-input" value="<?php echo htmlspecialchars($noticeDays); ?>" min="1" max="60" required style="height: 36px; width: 180px;">
+                    <div style="font-size: 11px; color: var(--text-light); margin-top: 4px;">
+                        Generates advance notifications &amp; emails X days prior to scheduled court appearances.
+                    </div>
+                </div>
+
+                <!-- Next Step Action Notice Field -->
+                <div class="form-group-row" style="margin-bottom: 16px;">
+                    <label class="field-label-text">NEXT STEP ACTION ADVANCE NOTICE (DAYS)</label>
+                    <input type="number" name="court_next_step_notice_days" class="form-field-input" value="<?php echo htmlspecialchars($nextStepNoticeDays); ?>" min="1" max="60" required style="height: 36px; width: 180px;">
+                    <div style="font-size: 11px; color: var(--text-light); margin-top: 4px;">
+                        Generates advance notifications &amp; emails Y days prior to upcoming procedural step deadlines.
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end;">
+                    <button type="submit" id="saveSettingsBtn" class="btn btn-primary" style="height: 36px; padding: 0 20px; font-weight: 700; border-radius: 8px;">Save Settings</button>
+                </div>
+            </form>
+        </div>
 </div>
+
 
 <script>
 // AJAX Implementation processing form mutations dynamically
@@ -199,6 +236,33 @@ document.querySelectorAll('.async-config-form').forEach(form => {
                 showSystemModal('Error Adding Parameter', data.message, 'error');
             }
         });
+    });
+});
+
+// AJAX - Save Notification Lead Time Settings
+document.getElementById('saveSettingsForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('saveSettingsBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const endpoint = (typeof BASE_URL !== 'undefined') ? BASE_URL + 'includes/settings_handler.php' : '../includes/settings_handler.php';
+
+    fetch(endpoint, { method: 'POST', body: new FormData(this) })
+    .then(r => r.json())
+    .then(data => {
+        if(data.success) {
+            showSystemModal('Settings Saved', data.message, 'success');
+        } else {
+            showSystemModal('Error', data.message, 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = 'Save Settings';
+    })
+    .catch(err => {
+        showSystemModal('Error', 'Failed to communicate with server.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Save Settings';
     });
 });
 
