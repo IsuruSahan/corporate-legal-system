@@ -2,6 +2,10 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/mailer.php';
 
+// Force local timezone consistency across CLI/Cron and Apache Web server
+date_default_timezone_set('Asia/Colombo');
+$pdo->exec("SET time_zone = '+05:30'");
+
 if (!function_exists('processCourtMilestoneAlerts')) {
     function processCourtMilestoneAlerts() {
         global $pdo;

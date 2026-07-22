@@ -27,9 +27,9 @@ $base_path   = parse_url(BASE_URL, PHP_URL_PATH) ?: '/';
         <li class="nav-item <?php echo (strpos($current_uri, '/archives/') !== false) ? 'active' : ''; ?>">
             <a href="<?php echo BASE_URL; ?>archives/index.php">Physical Archives</a>
         </li>
-        <!-- <li class="nav-item <?php echo (strpos($current_uri, '/secretarial/') !== false) ? 'active' : ''; ?>">
-            <a href="<?php echo BASE_URL; ?>secretarial/index.php">Secretarial Vault</a>
-        </li> -->
+        <li class="nav-item <?php echo (strpos($current_uri, '/reports/') !== false) ? 'active' : ''; ?>">
+            <a href="<?php echo BASE_URL; ?>reports/index.php">Reports</a>
+        </li>
         
         <?php if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'Admin'): ?>
             <li class="nav-item <?php echo (strpos($current_uri, '/users/') !== false) ? 'active' : ''; ?>">
